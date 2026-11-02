@@ -153,7 +153,7 @@ func run(o: String, ei: int, full: bool) -> void:
 		if not Game.S.clues.has(k):
 			Game.S.clues.append(k)
 	Game.go_board()
-	await _wait(2.4)
+	await _wait(5.0)
 	await _shot("board")
 	var b = Game.board
 	for qi in range(E.questions.size()):

@@ -18,6 +18,17 @@
 
 > 죽음, 고독사, 과로, 약물 오남용 같은 무거운 이야기를 다룹니다. 게임 속 인물과 사건은 모두 지어낸 이야기입니다.
 
+## 내려받기
+
+**https://eunyool10.github.io/LastRoom/** — 접속한 기기에 맞는 파일과 받는 방법을 보여 줍니다.
+
+| 기기 | 받는 것 | 단계 |
+| --- | --- | --- |
+| Windows | 설치 파일 `LastRoom-Setup-1.1.0.exe` | 정식 1.1.0 |
+| Android | APK `LastRoom-1.2.0-beta-android.apk` (Android 7.0 이상) | 테스트 베타 1.2.0 |
+| Mac | 앱 압축 파일 `LastRoom-1.2.0-beta-mac.zip` (Apple 칩 · Intel) | 테스트 베타 1.2.0 |
+| iPhone · iPad · 브라우저 | [웹 버전](https://eunyool10.github.io/LastRoom/play/) — 설치 없이 실행, 홈 화면에 추가 가능 | 테스트 베타 1.2.0 |
+
 ## 설치 방법 (Windows)
 
 1. [Releases](../../releases/latest)에서 `LastRoom-Setup-1.1.0.exe`를 내려받아 실행합니다.
@@ -47,6 +58,8 @@
 | F | 손전등 |
 | U / H / R | (유품 조사) UV 라이트 / 단서 위치 / 정면 보기 |
 | Esc / F11 | 멈춤 / 전체 화면 |
+
+휴대폰 · 태블릿(베타)에서는 왼쪽 화면을 끌어 걷고 오른쪽 화면을 끌어 둘러봅니다. 도구, 집기, 보관 · 폐기 · 내려놓기는 오른쪽 아래 버튼으로, 멈춤은 왼쪽 위 버튼으로 합니다. 유품 조사에서는 두 손가락으로 확대합니다.
 
 ## 라이선스
 

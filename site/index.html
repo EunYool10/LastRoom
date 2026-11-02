@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="마지막 방 — 특수청소부의 기록. Windows, Android, Mac, iPhone에서 내려받거나 브라우저로 바로 할 수 있습니다.">
+<meta name="theme-color" content="#14110f">
+<meta property="og:title" content="마지막 방 — 특수청소부의 기록">
+<meta property="og:description" content="고인이 남긴 방을 치우고, 남겨진 물건으로 마지막 이야기를 듣는 1인칭 추리 게임">
+<meta property="og:image" content="img/hero.jpg">
+<title>마지막 방 — 내려받기</title>
+<link rel="icon" type="image/png" href="icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700;800&family=Nanum+Myeongjo:wght@400;700;800&display=swap">
+<style>
+:root {
+  --night: #13100e;
+  --night-2: #1c1815;
+  --paper: #ece4d6;
+  --paper-2: #e3d9c7;
+  --paper-edge: #cfc3ae;
+  --ink: #2b2622;
+  --ink-dim: #6b6157;
+  --rule: rgba(43, 38, 34, .16);
+  --red: #a3362a;
+  --text: #d8d0c4;
+  --text-dim: #9d9488;
+  --serif: "Nanum Myeongjo", "AppleMyungjo", "Batang", serif;
+  --sans: "Nanum Gothic", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+html, body { margin: 0; }
+body { background: var(--night); color: var(--text); font-family: var(--sans); line-height: 1.65; -webkit-text-size-adjust: 100%; }
+a { color: inherit; }
+img { display: block; max-width: 100%; height: auto; }
+.wrap { max-width: 1040px; margin: 0 auto; padding: 0 24px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+:focus-visible { outline: 2px solid #d9b26a; outline-offset: 3px; }
+
+/* 맨 위 줄 */
+.top { border-bottom: 1px solid rgba(255, 255, 255, .07); }
+.top .wrap { display: flex; align-items: center; justify-content: space-between; height: 56px; }
+.mark { font-family: var(--serif); font-weight: 800; font-size: 18px; text-decoration: none; color: #efe9df; }
+.top nav { display: flex; gap: 22px; font-size: 14px; }
+.top nav a { text-decoration: none; color: var(--text-dim); }
+.top nav a:hover { color: #efe9df; }
+
+/* 첫 화면 */
+.hero { padding: 64px 0 72px; }
+.hero .wrap { display: grid; grid-template-columns: 1fr 1.08fr; gap: 56px; align-items: center; }
+.kicker { font-size: 14px; letter-spacing: .32em; color: var(--text-dim); margin: 0 0 8px; }
+h1 { font-family: var(--serif); font-weight: 800; font-size: clamp(48px, 7vw, 80px); line-height: 1.04; margin: 0; color: #efe9df; }
+.lede { font-family: var(--serif); font-size: 18px; color: #bdb5a8; margin: 18px 0 0; }
+.cta { margin-top: 32px; }
+.cta-btn {
+  display: inline-flex; align-items: center; gap: 12px; text-decoration: none;
+  background: var(--paper); color: var(--ink); border: 0;
+  font-family: var(--serif); font-weight: 800; font-size: 20px;
+  padding: 16px 24px 14px; min-height: 56px; cursor: pointer;
+  box-shadow: 0 2px 0 var(--paper-edge), 0 10px 24px rgba(0, 0, 0, .35);
+}
+.cta-btn:hover { background: #f4eee3; }
+.cta-btn svg { width: 20px; height: 20px; flex: none; }
+.cta-meta { font-size: 14px; color: var(--text-dim); margin: 12px 0 0; }
+.cta-alt { display: inline-block; margin-top: 18px; font-size: 15px; color: var(--text); text-underline-offset: 4px; }
+
+/* 현장 사진 */
+.photo { margin: 0; position: relative; background: #f2ede4; padding: 10px 10px 40px; transform: rotate(1.6deg); box-shadow: 0 18px 40px rgba(0, 0, 0, .5); }
+.photo img { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; background: #000; }
+.photo figcaption { position: absolute; left: 14px; bottom: 10px; font-family: var(--serif); font-size: 15px; color: #4a423a; }
+.photo::before { /* 테이프 */
+  content: ""; position: absolute; top: -14px; left: 50%; width: 110px; height: 28px; margin-left: -55px;
+  background: rgba(230, 220, 190, .55); transform: rotate(-3deg); box-shadow: 0 1px 2px rgba(0, 0, 0, .2);
+}
+
+/* 내려받기 서류철 */
+.get { padding: 24px 0 72px; }
+.sec-title { font-family: var(--serif); font-weight: 800; font-size: 28px; color: #efe9df; margin: 0 0 6px; }
+.sec-sub { color: var(--text-dim); margin: 0 0 26px; font-size: 15px; }
+.tabs { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; padding-top: 6px; }
+.tabs::-webkit-scrollbar { display: none; }
+.tab {
+  flex: none; position: relative; cursor: pointer;
+  font-family: var(--sans); font-weight: 700; font-size: 15px; color: #4a423a;
+  background: var(--paper-2); border: 1px solid var(--paper-edge); border-bottom: 0;
+  padding: 12px 20px 10px; min-height: 48px; border-radius: 6px 6px 0 0;
+  transform: translateY(4px); transition: transform .15s;
+}
+.tab:hover { transform: translateY(1px); }
+.tab[aria-selected="true"] { background: var(--paper); color: var(--ink); transform: none; z-index: 1; }
+.tab .here { display: block; font-size: 11px; font-weight: 800; color: var(--red); line-height: 1; margin-top: 3px; }
+.panel-box { background: var(--paper); color: var(--ink); border: 1px solid var(--paper-edge); padding: 34px 38px; box-shadow: 0 18px 40px rgba(0, 0, 0, .4); position: relative; }
+.panel { display: grid; grid-template-columns: 1fr 260px; gap: 34px; }
+.js .panel[hidden] { display: none; }
+.p-name { font-family: var(--serif); font-weight: 800; font-size: 26px; line-height: 1.3; margin: 0; }
+.p-name .stamp { margin-left: 10px; vertical-align: 4px; }
+.stamp { font-family: var(--serif); font-weight: 800; font-size: 14px; letter-spacing: .08em; padding: 3px 9px 1px; border: 2px solid currentColor; transform: rotate(-4deg); display: inline-block; white-space: nowrap; }
+.stamp.beta { color: var(--red); }
+.stamp.ok { color: #3d5a3a; }
+.p-meta { margin: 6px 0 0; color: var(--ink-dim); font-size: 14px; }
+.p-steps { counter-reset: s; list-style: none; margin: 22px 0 0; padding: 0; }
+.p-steps li { counter-increment: s; position: relative; padding: 10px 0 10px 44px; border-top: 1px dashed var(--rule); font-size: 15px; }
+.p-steps li:last-child { border-bottom: 1px dashed var(--rule); }
+.p-steps li::before { content: counter(s); position: absolute; left: 0; top: 9px; width: 28px; height: 28px; border: 1.5px solid var(--ink); border-radius: 50%; text-align: center; line-height: 26px; font-family: var(--serif); font-weight: 800; font-size: 14px; }
+.p-side { border-left: 1px solid var(--rule); padding-left: 30px; display: flex; flex-direction: column; justify-content: center; gap: 10px; }
+.dl {
+  display: flex; align-items: center; justify-content: center; gap: 10px; text-decoration: none;
+  background: var(--ink); color: var(--paper); font-family: var(--serif); font-weight: 800; font-size: 19px;
+  padding: 15px 18px 13px; min-height: 54px;
+}
+.dl:hover { background: #000; }
+.dl svg { width: 19px; height: 19px; }
+.dl.line { background: transparent; color: var(--ink); border: 2px solid var(--ink); }
+.dl.line:hover { background: rgba(43, 38, 34, .07); }
+.file { font-size: 13px; color: var(--ink-dim); text-align: center; word-break: break-all; margin: 0; }
+.side-note { font-size: 13px; color: var(--ink-dim); margin: 6px 0 0; text-align: center; }
+.side-note a { color: var(--ink); }
+
+/* 게임 소개 */
+.about { padding: 24px 0 72px; }
+.stages { display: grid; grid-template-columns: repeat(3, 1fr); gap: 26px; }
+.stage { margin: 0; }
+.stage img { aspect-ratio: 16 / 10; object-fit: cover; width: 100%; border: 1px solid rgba(255, 255, 255, .08); background: #000; }
+.stage figcaption { margin-top: 12px; }
+.stage b { display: block; font-family: var(--serif); font-size: 19px; color: #efe9df; }
+.stage .no { font-size: 13px; letter-spacing: .2em; color: var(--text-dim); }
+.stage p { margin: 4px 0 0; font-size: 14px; color: var(--text-dim); }
+.rooms { margin-top: 44px; border-top: 1px solid rgba(255, 255, 255, .1); }
+.room { display: grid; grid-template-columns: 70px 180px 1fr; gap: 16px; padding: 14px 0; border-bottom: 1px solid rgba(255, 255, 255, .07); align-items: baseline; }
+.room .n { font-size: 14px; color: var(--text-dim); }
+.room .t { font-family: var(--serif); font-weight: 800; font-size: 18px; color: #efe9df; }
+.room .d { font-size: 15px; color: var(--text-dim); }
+
+/* 베타 안내 */
+.beta-sec { padding: 8px 0 64px; }
+.beta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; }
+.note-card { background: var(--night-2); border: 1px solid rgba(255, 255, 255, .07); padding: 24px 26px; }
+.note-card h3 { font-family: var(--serif); font-size: 18px; margin: 0 0 10px; color: #efe9df; }
+.note-card ul { margin: 0; padding-left: 18px; font-size: 14px; color: #bdb5a8; }
+.note-card li { margin: 4px 0; }
+.keys { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 14px; color: #bdb5a8; margin: 0; }
+.keys dt { color: #efe9df; font-weight: 700; }
+.keys dd { margin: 0; }
+.warn { margin: 26px 0 0; font-size: 14px; color: var(--text-dim); border-left: 2px solid var(--red); padding-left: 14px; }
+
+footer { border-top: 1px solid rgba(255, 255, 255, .07); padding: 26px 0 40px; font-size: 13px; color: #7d756a; }
+footer .wrap { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+footer p { margin: 0; }
+
+@media (max-width: 860px) {
+  .hero { padding: 40px 0 56px; }
+  .hero .wrap { grid-template-columns: 1fr; gap: 40px; }
+  .panel { grid-template-columns: 1fr; gap: 22px; }
+  .p-side { border-left: 0; padding-left: 0; border-top: 1px solid var(--rule); padding-top: 22px; }
+  .stages { grid-template-columns: 1fr; }
+  .beta-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 560px) {
+  .wrap { padding: 0 16px; }
+  .top nav { gap: 14px; font-size: 13px; }
+  .top nav a.opt { display: none; }
+  .cta-btn { width: 100%; justify-content: center; }
+  .panel-box { padding: 24px 18px; margin: 0 -4px; }
+  .tabs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 3px; overflow: visible; }
+  .tab { padding: 11px 2px 9px; font-size: 13px; text-align: center; }
+  .tab .long { display: none; }
+  .room { grid-template-columns: 52px 1fr; }
+  .room .d { grid-column: 2; }
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <a class="mark" href="#">마지막 방</a>
+    <nav aria-label="바로 가기">
+      <a href="#get">내려받기</a>
+      <a href="#about">게임 소개</a>
+      <a class="opt" href="#beta">베타 안내</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+<section class="hero">
+  <div class="wrap">
+    <div>
+      <p class="kicker">특수청소부의 기록</p>
+      <h1>마지막 방</h1>
+      <p class="lede">고인이 남긴 방을 치우고, 남겨진 물건으로 마지막 이야기를 듣는 1인칭 추리 게임. 방 다섯 칸, 이야기 다섯 편.</p>
+      <div class="cta">
+        <a class="cta-btn" id="ctaBtn" href="#get">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 4v11"/><path d="M7 11l5 5 5-5"/><path d="M5 20h14"/></svg>
+          <span id="ctaText">내 기기에 맞게 받기</span>
+        </a>
+        <p class="cta-meta" id="ctaMeta">Windows · Android · Mac · iPhone · 브라우저</p>
+        <a class="cta-alt" id="ctaAlt" href="#get">다른 기기용 받기</a>
+      </div>
+    </div>
+    <figure class="photo">
+      <img src="img/hero.jpg" width="1280" height="800" alt="손전등 불빛이 비친 고시원 방. 책상 위에 빈 캔과 약통이 놓여 있다.">
+      <figcaption>1장 · 고시원 307호</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section class="get" id="get" aria-labelledby="getTitle">
+  <div class="wrap">
+    <h2 class="sec-title" id="getTitle">내려받기</h2>
+    <p class="sec-sub">쓰는 기기를 고르면 받는 방법이 나옵니다. Windows는 정식판, 나머지는 테스트 베타입니다.</p>
+
+    <div class="tabs" role="tablist" aria-label="기기 고르기">
+      <button class="tab" role="tab" id="tab-win" aria-controls="p-win" data-dev="win">Windows</button>
+      <button class="tab" role="tab" id="tab-android" aria-controls="p-android" data-dev="android">Android</button>
+      <button class="tab" role="tab" id="tab-mac" aria-controls="p-mac" data-dev="mac">Mac</button>
+      <button class="tab" role="tab" id="tab-ios" aria-controls="p-ios" data-dev="ios">iPhone<span class="long"> · iPad</span></button>
+      <button class="tab" role="tab" id="tab-web" aria-controls="p-web" data-dev="web">브라우저</button>
+    </div>
+    <div class="panel-box">
+      <div class="panel" role="tabpanel" id="p-win" aria-labelledby="tab-win" tabindex="0">
+        <div>
+          <h3 class="p-name">Windows <span class="stamp ok">정식 1.1.0</span></h3>
+          <p class="p-meta">Windows 10 · 11 (64비트) · 설치 파일 약 54MB · 관리자 권한 필요 없음</p>
+          <ol class="p-steps">
+            <li>내려받은 <b>LastRoom-Setup-1.1.0.exe</b>를 실행합니다.</li>
+            <li>“Windows의 PC 보호” 창이 뜨면 <b>추가 정보</b>를 누르고 <b>실행</b>을 누릅니다. 개인이 만든 프로그램이라 처음 한 번 뜨는 창입니다.</li>
+            <li>이용 안내에 동의하고 설치하면 바탕 화면과 시작 메뉴에 <b>마지막 방</b>이 생깁니다.</li>
+          </ol>
+        </div>
+        <div class="p-side">
+          <a class="dl" href="https://github.com/EunYool10/LastRoom/releases/download/v1.1.0/LastRoom-Setup-1.1.0.exe"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 4v11"/><path d="M7 11l5 5 5-5"/><path d="M5 20h14"/></svg>설치 파일 받기</a>
+          <p class="file">LastRoom-Setup-1.1.0.exe</p>
+          <p class="side-note">지울 때는 Windows 설정의 앱 목록에서 지웁니다.</p>
+        </div>
+      </div>
+
+      <div class="panel" role="tabpanel" id="p-android" aria-labelledby="tab-android" tabindex="0">
+        <div>
+          <h3 class="p-name">Android <span class="stamp beta">베타 1.2.0</span></h3>
+          <p class="p-meta">Android 7.0 이상 · 64비트 휴대폰 · APK 약 52MB</p>
+          <ol class="p-steps">
+            <li>받은 <b>LastRoom-1.2.0-beta-android.apk</b>를 알림창이나 내 파일에서 엽니다.</li>
+            <li>“출처를 알 수 없는 앱” 안내가 나오면 <b>설정</b>을 눌러 <b>이 출처 허용</b>을 켜고 돌아옵니다.</li>
+            <li><b>설치</b>를 누릅니다. 휴대폰을 가로로 들고 실행합니다.</li>
+          </ol>
+        </div>
+        <div class="p-side">
+          <a class="dl" href="https://github.com/EunYool10/LastRoom/releases/download/v1.2.0-beta/LastRoom-1.2.0-beta-android.apk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 4v11"/><path d="M7 11l5 5 5-5"/><path d="M5 20h14"/></svg>APK 받기</a>
+          <p class="file">LastRoom-1.2.0-beta-android.apk</p>
+          <p class="side-note">설치가 막히면 <a href="play/">브라우저에서 바로 하기</a></p>
+        </div>
+      </div>
+
+      <div class="panel" role="tabpanel" id="p-mac" aria-labelledby="tab-mac" tabindex="0">
+        <div>
+          <h3 class="p-name">Mac <span class="stamp beta">베타 1.2.0</span></h3>
+          <p class="p-meta">macOS 11 이상 · Apple 칩과 Intel 모두 · 압축 파일 약 84MB</p>
+          <ol class="p-steps">
+            <li>받은 압축 파일을 열고, 나온 <b>마지막 방</b> 앱을 <b>응용 프로그램</b> 폴더로 옮깁니다.</li>
+            <li>앱을 엽니다. “확인할 수 없음” 창이 뜨면 <b>완료</b>를 눌러 닫습니다.</li>
+            <li><b>시스템 설정 → 개인정보 보호 및 보안</b> 아래쪽에서 <b>그래도 열기</b>를 누르면 그다음부터는 바로 열립니다.</li>
+          </ol>
+        </div>
+        <div class="p-side">
+          <a class="dl" href="https://github.com/EunYool10/LastRoom/releases/download/v1.2.0-beta/LastRoom-1.2.0-beta-mac.zip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M12 4v11"/><path d="M7 11l5 5 5-5"/><path d="M5 20h14"/></svg>Mac용 받기</a>
+          <p class="file">LastRoom-1.2.0-beta-mac.zip</p>
+          <p class="side-note">설치가 어렵다면 <a href="play/">브라우저에서 바로 하기</a></p>
+        </div>
+      </div>
+
+      <div class="panel" role="tabpanel" id="p-ios" aria-labelledby="tab-ios" tabindex="0">
+        <div>
+          <h3 class="p-name">iPhone · iPad <span class="stamp beta">웹 베타 1.2.0</span></h3>
+          <p class="p-meta">Safari · 설치 없이 실행 · 처음 한 번 약 68MB를 내려받음</p>
+          <ol class="p-steps">
+            <li>Safari에서 <b>바로 하기</b>를 누르고, 기기를 가로로 돌립니다.</li>
+            <li>앱처럼 쓰려면 아래쪽 <b>공유</b> 버튼 → <b>홈 화면에 추가</b>를 누릅니다.</li>
+            <li>홈 화면의 <b>마지막 방</b>으로 열면 주소창 없이 화면을 꽉 채워 실행됩니다.</li>
+          </ol>
+        </div>
+        <div class="p-side">
+          <a class="dl" href="play/">바로 하기</a>
+          <p class="file">Wi-Fi에서 여는 것을 권합니다</p>
+          <p class="side-note">App Store 배포는 준비하지 않았습니다.</p>
+        </div>
+      </div>
+
+      <div class="panel" role="tabpanel" id="p-web" aria-labelledby="tab-web" tabindex="0">
+        <div>
+          <h3 class="p-name">브라우저 <span class="stamp beta">웹 베타 1.2.0</span></h3>
+          <p class="p-meta">최신 Chrome · Edge · Safari · Firefox · 처음 한 번 약 68MB를 내려받음</p>
+          <ol class="p-steps">
+            <li><b>바로 하기</b>를 누르면 내려받기가 끝나는 대로 시작됩니다.</li>
+            <li>PC는 키보드와 마우스, 휴대폰과 태블릿은 화면을 눌러 조작합니다.</li>
+            <li>설치판보다 빛과 그림자가 조금 단순하게 보일 수 있습니다.</li>
+          </ol>
+        </div>
+        <div class="p-side">
+          <a class="dl" href="play/">바로 하기</a>
+          <p class="file">기록은 이 브라우저에 저장됩니다</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="about" id="about" aria-labelledby="aboutTitle">
+  <div class="wrap">
+    <h2 class="sec-title" id="aboutTitle">한 장은 이렇게 흘러갑니다</h2>
+    <p class="sec-sub">방 한 칸이 이야기 하나입니다. 장마다 세 단계를 거쳐 고인의 마지막을 밝힙니다.</p>
+    <div class="stages">
+      <figure class="stage">
+        <img src="img/clean.jpg" width="1280" height="800" loading="lazy" alt="어두운 방에서 얼룩을 닦는 1인칭 화면">
+        <figcaption><span class="no">1단계</span><b>현장 정리</b><p>손전등 하나로 방에 들어가, 얼룩에 소독약을 뿌려 닦고 물건마다 남길지 버릴지 정합니다.</p></figcaption>
+      </figure>
+      <figure class="stage">
+        <img src="img/inspect.jpg" width="1280" height="800" loading="lazy" alt="작업실 책상 위에서 유품을 돌려 보는 화면">
+        <figcaption><span class="no">2단계</span><b>유품 조사</b><p>유품을 손에 들고 돌려 봅니다. UV 라이트, 잠긴 휴대폰, 숫자 자물쇠, 이중 바닥이 기다립니다.</p></figcaption>
+      </figure>
+      <figure class="stage">
+        <img src="img/board.jpg" width="1280" height="800" loading="lazy" alt="코르크 보드에 단서 쪽지를 붙여 사건을 맞추는 화면">
+        <figcaption><span class="no">3단계</span><b>사건 재구성</b><p>단서를 보드에 붙여 사망 원인과 사연을 맞추고, 남겨진 편지를 전할지 태울지 정합니다.</p></figcaption>
+      </figure>
+    </div>
+    <div class="rooms" role="list" aria-label="다섯 개의 방">
+      <div class="room" role="listitem"><span class="n">1장</span><span class="t">합격 통보</span><span class="d">고시원 307호 — 한 평 반짜리 방, 끝나지 않은 면접</span></div>
+      <div class="room" role="listitem"><span class="n">2장</span><span class="t">겨울 통장</span><span class="d">반지하 B01호 — 보일러는 한 번도 켜지지 않았다</span></div>
+      <div class="room" role="listitem"><span class="n">3장</span><span class="t">필터</span><span class="d">오피스텔 1203호 — 카메라 반대편의 방</span></div>
+      <div class="room" role="listitem"><span class="n">4장</span><span class="t">편도</span><span class="d">공단 원룸 202호 — 집으로 가는 기차표 한 장</span></div>
+      <div class="room" role="listitem"><span class="n">5장</span><span class="t">닫힌 문</span><span class="d">아파트 9층, 지현의 방 — 6년 만에 열린 방문</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="beta-sec" id="beta" aria-labelledby="betaTitle">
+  <div class="wrap">
+    <h2 class="sec-title" id="betaTitle">테스트 베타 안내</h2>
+    <p class="sec-sub">Android · Mac · 웹은 시험판입니다. 기기에 따라 느리거나 화면이 어긋날 수 있습니다.</p>
+    <div class="beta-grid">
+      <div class="note-card">
+        <h3>휴대폰 · 태블릿 조작</h3>
+        <dl class="keys">
+          <dt>왼쪽 화면 끌기</dt><dd>걷기</dd>
+          <dt>오른쪽 화면 끌기</dt><dd>둘러보기</dd>
+          <dt>손 · 분무기 · 스크러버</dt><dd>도구 바꾸기 (오른쪽 아래)</dd>
+          <dt>집기 · 뿌리기 · 문지르기</dt><dd>누르고 있는 동안 도구 사용</dd>
+          <dt>보관 · 폐기 · 내려놓기</dt><dd>들고 있는 물건 정하기</dd>
+          <dt>두 손가락 벌리기</dt><dd>유품 조사에서 확대</dd>
+        </dl>
+      </div>
+      <div class="note-card">
+        <h3>알아 두기</h3>
+        <ul>
+          <li>저장 기록은 기기마다, 브라우저마다 따로 남습니다.</li>
+          <li>Android 앱은 뒤로 가기 버튼이 멈춤 메뉴를 엽니다.</li>
+          <li>휴대폰은 화면이 가로일 때만 실행됩니다.</li>
+          <li>PC 키보드 조작은 게임 안 <b>조작법</b>에서 볼 수 있습니다.</li>
+        </ul>
+      </div>
+    </div>
+    <p class="warn">죽음, 고독사, 과로, 약물 오남용 같은 무거운 이야기를 다룹니다. 게임 속 인물과 사건은 모두 지어낸 이야기입니다.</p>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>저작권 소유 · 은율 &nbsp;·&nbsp; © 2026 은율. 모든 권리 보유.</p>
+    <p>허락 없이 게임 파일을 고치거나 다시 배포할 수 없습니다.</p>
+  </div>
+</footer>
+
+<script>
+document.documentElement.classList.add('js');
+(function () {
+  var ua = navigator.userAgent;
+  var touchMac = /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
+  var dev = /iPhone|iPad|iPod/.test(ua) || touchMac ? 'ios'
+    : /Android/.test(ua) ? 'android'
+    : /Macintosh/.test(ua) ? 'mac'
+    : /Windows/.test(ua) ? 'win' : 'web';
+
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('.tab'));
+  function select(id, focus) {
+    tabs.forEach(function (t) {
+      var on = t.dataset.dev === id;
+      t.setAttribute('aria-selected', on ? 'true' : 'false');
+      t.tabIndex = on ? 0 : -1;
+      document.getElementById(t.getAttribute('aria-controls')).hidden = !on;
+      if (on && focus) t.focus();
+    });
+  }
+  tabs.forEach(function (t, i) {
+    if (t.dataset.dev === dev) {
+      var s = document.createElement('span');
+      s.className = 'here';
+      s.textContent = '이 기기';
+      t.appendChild(s);
+    }
+    t.addEventListener('click', function () { select(t.dataset.dev); });
+    t.addEventListener('keydown', function (e) {
+      var k = e.key, n = null;
+      if (k === 'ArrowRight') n = tabs[(i + 1) % tabs.length];
+      if (k === 'ArrowLeft') n = tabs[(i - 1 + tabs.length) % tabs.length];
+      if (k === 'Home') n = tabs[0];
+      if (k === 'End') n = tabs[tabs.length - 1];
+      if (n) { e.preventDefault(); select(n.dataset.dev, true); }
+    });
+  });
+  select(dev);
+
+  // 첫 화면 버튼: 이 기기용 파일을 바로 받고, 받은 다음 할 일을 보여 준다
+  var label = {
+    win: ['Windows용 설치 파일 받기', '정식 1.1.0 · 약 54MB'],
+    android: ['Android용 APK 받기', '테스트 베타 1.2.0 · 약 52MB'],
+    mac: ['Mac용 앱 받기', '테스트 베타 1.2.0 · 약 84MB'],
+    ios: ['Safari에서 바로 하기', '설치 없이 시작 · 웹 베타 1.2.0'],
+    web: ['브라우저에서 바로 하기', '설치 없이 시작 · 웹 베타 1.2.0']
+  }[dev];
+  var cta = document.getElementById('ctaBtn');
+  var link = document.querySelector('#p-' + dev + ' .dl');
+  document.getElementById('ctaText').textContent = label[0];
+  document.getElementById('ctaMeta').textContent = label[1];
+  cta.href = link.getAttribute('href');
+  if (dev !== 'ios' && dev !== 'web') {
+    cta.addEventListener('click', function () {
+      setTimeout(function () { document.getElementById('get').scrollIntoView(); }, 400);
+    });
+  }
+})();
+</script>
+</body>
+</html>
