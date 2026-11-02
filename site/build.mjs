@@ -9,7 +9,7 @@ const out = path.join(root, 'build', 'site');
 
 fs.rmSync(out, { recursive: true, force: true });
 fs.mkdirSync(path.join(out, 'play'), { recursive: true });
-for (const f of fs.readdirSync(web)) fs.copyFileSync(path.join(web, f), path.join(out, 'play', f));
+for (const f of fs.readdirSync(web)) if (!f.endsWith('.import')) fs.copyFileSync(path.join(web, f), path.join(out, 'play', f));
 fs.copyFileSync(path.join(root, 'site', 'index.html'), path.join(out, 'index.html'));
 fs.cpSync(path.join(root, 'site', 'img'), path.join(out, 'img'), { recursive: true });
 fs.copyFileSync(path.join(root, 'assets', 'tex', 'icon.png'), path.join(out, 'icon.png'));
