@@ -118,6 +118,7 @@ func _build_env() -> void:
 	e.adjustment_enabled = true
 	e.adjustment_saturation = 0.82
 	e.adjustment_contrast = 1.08
+	e.adjustment_brightness = float(Game.settings.get("bright", 1.0))
 	world_env = WorldEnvironment.new()
 	world_env.environment = e
 	add_child(world_env)
@@ -223,7 +224,7 @@ func _build_items() -> void:
 			g.position.y = res.lie
 		for u in res.get("uv", []):
 			u.visible = false
-		var it := {"def": d, "root": root, "state": "idle", "hidden": d.get("hidden", false)}
+		var it := {"def": d, "root": root, "state": "idle", "hidden": d.get("hidden", false), "base": root.transform}
 		var a := _local_aabb(root)
 		var body := StaticBody3D.new()
 		body.collision_layer = L_ITEM
@@ -475,6 +476,8 @@ func _build_hud() -> void:
 		var l := Ui.shadow(Ui.label(["1  손", "2  소독 분무기", "3  스크러버"][i], 16, Ui.DIM, Ui.sans_b), 3)
 		tb.add_child(l)
 		H_.tools.append(l)
+	var inv := Ui.shadow(Ui.label("I  보관함", 16, Color(1, 1, 1, 0.38), Ui.sans_b), 3)
+	tb.add_child(inv)
 	tb.visible = not Game.touch
 	root.add_child(tb)
 	var fl := Ui.shadow(Ui.label("", 14, Ui.DIM, Ui.sans), 3)
@@ -603,7 +606,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			scrub_motion += abs(rel.x) + abs(rel.y)
 			s *= 0.25
 		yaw -= rel.x * s
-		pitch = clamp(pitch - rel.y * s, -1.45, 1.45)
+		pitch = clamp(pitch - rel.y * s * (-1.0 if Game.settings.get("invert", false) else 1.0), -1.45, 1.45)
 	elif event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			if event.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
@@ -628,6 +631,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				if card != null:
 					card_action("cancel")
 			KEY_F: toggle_flash()
+			KEY_I, KEY_TAB: Game.open_inventory()
 
 
 func look(rel: Vector2) -> void:
@@ -636,7 +640,7 @@ func look(rel: Vector2) -> void:
 		scrub_motion += abs(rel.x) + abs(rel.y)
 		s *= 0.25
 	yaw -= rel.x * s
-	pitch = clamp(pitch - rel.y * s, -1.45, 1.45)
+	pitch = clamp(pitch - rel.y * s * (-1.0 if Game.settings.get("invert", false) else 1.0), -1.45, 1.45)
 
 
 func set_use(v: bool) -> void:
@@ -766,9 +770,50 @@ func sort_item(it, keep: bool) -> void:
 	var tw := create_tween().set_parallel(true)
 	tw.tween_property(it.root, "scale", Vector3.ONE * 0.01, 0.35)
 	tw.tween_property(it.root, "position:y", it.root.position.y - 0.4, 0.35)
-	tw.chain().tween_callback(it.root.queue_free)
+	var root: Node3D = it.root
+	tw.chain().tween_callback(func(): root.visible = false)
+	it.tw = tw
 	_update_hud()
 	_check_complete()
+
+
+# ───────────────────────────── 보관함
+func kept_items() -> Array:
+	var out := []
+	for id in S.sorted:
+		if S.sorted[id] != "keep":
+			continue
+		for it in items:
+			if it.def.id == id:
+				out.append(it)
+	return out
+
+
+func trashed_count() -> int:
+	var n := 0
+	for id in S.sorted:
+		if S.sorted[id] == "trash":
+			n += 1
+	return n
+
+
+## 보관함에서 꺼내 원래 자리로 돌려놓는다
+func take_out(it) -> void:
+	if S.sorted.get(it.def.id, "") != "keep":
+		return
+	if it.has("tw") and it.tw.is_valid():
+		it.tw.kill()
+	S.sorted.erase(it.def.id)
+	S.kept.erase(it.def.id)
+	if it.def.kind == "trash":
+		S.err.kept_trash = max(0, S.err.kept_trash - 1)
+	it.root.transform = it.base
+	it.root.visible = true
+	it.hidden = false
+	it.state = "idle"
+	it.shape.disabled = false
+	complete = false
+	_update_hud()
 
 
 func _check_complete() -> void:
@@ -898,7 +943,7 @@ func _physics_process(dt: float) -> void:
 		if step_t > 0.85:
 			step_t = 0.0
 			Sfx.step()
-	head.position.y = eye + sin(bob * 2.0) * 0.018 * min(1.0, moving)
+	head.position.y = eye + sin(bob * 2.0) * 0.018 * min(1.0, moving) * (1.0 if Game.settings.get("bob", true) else 0.0)
 	if card != null and card.liftable:
 		var tgt: Vector3 = cam.global_transform * Vector3(0, -0.05, -0.5)
 		card.root.global_position = card.root.global_position.lerp(tgt, min(1.0, dt * 12.0))

@@ -1,11 +1,16 @@
 ; 마지막 방 설치 프로그램 (NSIS 3, Modern UI 2)
 Unicode true
 !include "MUI2.nsh"
+!include "FileFunc.nsh"
 
-!define APPNAME "마지막 방"
-!define APPID "LastRoom"
+!ifndef APPNAME
+  !define APPNAME "마지막 방"
+!endif
+!ifndef APPID
+  !define APPID "LastRoom"
+!endif
 !ifndef VERSION
-  !define VERSION "1.1.0"
+  !define VERSION "1.2.0"
 !endif
 !define PUBLISHER "김은율"
 !define UNKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPID}"
@@ -52,8 +57,40 @@ VIAddVersionKey /LANG=1042 "LegalCopyright" "${PUBLISHER}"
 
 !insertmacro MUI_LANGUAGE "Korean"
 
+; 게임 안에서 받은 업데이트: LastRoom-Setup.exe /S /RUN
+;  - 게임이 꺼질 때까지 잠깐 기다렸다가 설치하고, 끝나면 게임을 다시 켠다
+Var RunAfter
+
+Function .onInit
+  StrCpy $RunAfter "0"
+  ${GetParameters} $R0
+  ClearErrors
+  ${GetOptions} $R0 "/RUN" $R1
+  IfErrors +2 0
+  StrCpy $RunAfter "1"
+  IfSilent 0 +2
+  Sleep 1500
+FunctionEnd
+
+Function .onInstSuccess
+  StrCmp $RunAfter "1" 0 +2
+  Exec '"$INSTDIR\LastRoom.exe"'
+FunctionEnd
+
 Section "install"
   SetOutPath "$INSTDIR"
+  ; 게임이 아직 꺼지는 중이면 파일이 잠겨 있으니 잠시 기다린다
+  StrCpy $R2 0
+  wait_exe:
+  IfFileExists "$INSTDIR\LastRoom.exe" 0 exe_free
+  ClearErrors
+  Delete "$INSTDIR\LastRoom.exe"
+  IfErrors 0 exe_free
+  IntOp $R2 $R2 + 1
+  IntCmp $R2 30 exe_free 0 exe_free
+  Sleep 500
+  Goto wait_exe
+  exe_free:
   File "..\exe\LastRoom.exe"
   File "..\exe\LICENSES.txt"
   File "..\exe\OFL.txt"

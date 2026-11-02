@@ -19,21 +19,23 @@ func _ready() -> void:
 
 func _layout() -> void:
 	var s := get_viewport_rect().size
+	var k := float(Game.settings.get("pad", 1.0))
 	btns.clear()
 	if room.card != null:
-		_add("keep", "보관", Vector2(s.x - 140, s.y - 130), 72, true)
-		_add("trash", "폐기", Vector2(s.x - 305, s.y - 100), 54, false)
-		_add("cancel", "내려놓기", Vector2(s.x - 445, s.y - 100), 54, false)
+		_add("keep", "보관", Vector2(s.x - 140 * k, s.y - 130 * k), 72 * k, true)
+		_add("trash", "폐기", Vector2(s.x - 305 * k, s.y - 100 * k), 54 * k, false)
+		_add("cancel", "내려놓기", Vector2(s.x - 445 * k, s.y - 100 * k), 54 * k, false)
 	else:
-		var u := Vector2(s.x - 150, s.y - 150)
-		_add("use", ["집기", "뿌리기", "문지르기"][room.tool - 1], u, 80, true)
+		var u := Vector2(s.x - 150 * k, s.y - 150 * k)
+		_add("use", ["집기", "뿌리기", "문지르기"][room.tool - 1], u, 80 * k, true)
 		var names := ["손", "분무기", "스크러버"]
 		var offs := [Vector2(-205, 45), Vector2(-165, -120), Vector2(-25, -205)]
 		for i in 3:
-			_add("t%d" % (i + 1), names[i], u + offs[i], 46, i + 1 == room.tool)
+			_add("t%d" % (i + 1), names[i], u + offs[i] * k, 46 * k, i + 1 == room.tool)
 	if room.card == null:
-		_add("flash", "손전등" if room.flash_on else "손전등 꺼짐", Vector2(s.x - 74, s.y * 0.42), 42, false)
-	_add("pause", "멈춤", Vector2(74, 168), 38, false)
+		_add("flash", "손전등" if room.flash_on else "손전등 꺼짐", Vector2(s.x - 74 * k, s.y * 0.42), 42 * k, false)
+	_add("pause", "멈춤", Vector2(74 * k, 168), 38 * k, false)
+	_add("box", "보관함", Vector2(74 * k, 168 + 94 * k), 38 * k, false)
 
 
 func _add(id: String, label: String, c: Vector2, r: float, strong: bool) -> void:
@@ -120,6 +122,9 @@ func _press(id: String) -> void:
 		"pause":
 			held.clear()
 			Game.show_pause(false)
+		"box":
+			held.clear()
+			Game.open_inventory()
 
 
 func _release(id: String) -> void:

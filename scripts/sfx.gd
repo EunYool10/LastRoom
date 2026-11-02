@@ -47,6 +47,8 @@ func step() -> void:
 
 
 func breath(strength: float, inhale: bool) -> void:
+	if not Game.settings.get("breath", true):
+		return
 	var n := ("breath_in%d" if inhale else "breath_out%d") % (randi() % 2)
 	play(n, 0.25 + strength * 0.5, randf_range(0.95, 1.05))
 

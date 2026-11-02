@@ -1,0 +1,15 @@
+{
+  "version": "1.2.0",
+  "date": "2026-11-03",
+  "notes": [
+    "보관함: 현장에서 넣은 물건을 보고, 잘못 넣은 물건은 다시 꺼낸다.",
+    "업데이트 노트와 새 버전 알림, 게임 안에서 바로 업데이트",
+    "설정 화면 새 단장: 밝기, 걷기 흔들림, 숨소리, 상하 반전, 터치 버튼 크기",
+    "휴대폰에서 UV 라이트와 조사 버튼을 누르기 쉽게 고침",
+    "만든 사람들에 역할 표기"
+  ],
+  "windows": "https://github.com/EunYool10/LastRoom/releases/download/v1.2.0/LastRoom-Setup-1.2.0.exe",
+  "android": "https://github.com/EunYool10/LastRoom/releases/download/v1.2.0/LastRoom-1.2.0-android.apk",
+  "mac": "https://github.com/EunYool10/LastRoom/releases/download/v1.2.0/LastRoom-1.2.0-mac.zip",
+  "page": "https://eunyool10.github.io/LastRoom/"
+}

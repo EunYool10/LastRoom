@@ -19,6 +19,7 @@ var zoom := 1.0
 var dist := 1.0
 var hover = null
 var hint_t := 0.0
+var uv_t := 0
 var ui: CanvasLayer
 var U := {}
 
@@ -60,6 +61,7 @@ func _build_world() -> void:
 	e.glow_intensity = 0.5
 	e.adjustment_enabled = true
 	e.adjustment_saturation = 0.9
+	e.adjustment_brightness = float(Game.settings.get("bright", 1.0))
 	env = WorldEnvironment.new()
 	env.environment = e
 	add_child(env)
@@ -122,9 +124,19 @@ func _set_uv(on: bool) -> void:
 			u.visible = on
 	if U.has("uvb"):
 		U.uvb.add_theme_color_override("font_color", Color("cdb8ff") if on else Ui.TEXT)
+		if Game.touch:
+			U.uvb.text = "UV 켜짐" if on else "UV 라이트"
+			_tool_style(U.uvb, on)
+		else:
+			U.uvb.text = "U   UV 켜짐" if on else "U   UV 라이트"
+	if U.has("uvnote"):
+		U.uvnote.visible = on
 
 
 func toggle_uv() -> void:
+	if Time.get_ticks_msec() - uv_t < 300:
+		return
+	uv_t = Time.get_ticks_msec()
 	_set_uv(not uv)
 	Sfx.play("switch", 0.6)
 
@@ -457,6 +469,19 @@ func _activate(sp: Dictionary) -> void:
 
 
 # ───────────────────────────── 입력
+func _pick_near(mpos: Vector2):
+	var sp = _pick(mpos)
+	if sp != null:
+		return sp
+	for r in [16.0, 30.0]:
+		for k in 8:
+			var a := TAU * k / 8.0
+			sp = _pick(mpos + Vector2(cos(a), sin(a)) * r)
+			if sp != null:
+				return sp
+	return null
+
+
 func _pick(mpos: Vector2):
 	if cur == null:
 		return null
@@ -514,8 +539,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			if event.pressed:
 				drag = {"moved": 0.0}
 			else:
-				if drag != null and drag.moved < 7.0:
-					var sp = _pick(event.position)
+				if drag != null and drag.moved < (28.0 if Game.touch else 7.0):
+					var sp = _pick_near(event.position) if Game.touch else _pick(event.position)
 					if sp != null:
 						_activate(sp)
 					vel = Vector2.ZERO
@@ -672,15 +697,29 @@ func _build_ui() -> void:
 	U.name = nm
 	U.desc = ds
 	# 도구
-	var tb := Ui.hbox(30)
-	Ui.pin(tb, 0.5, 1, 0, -58, 0, -1)
-	var uvb := Ui.button("U   UV 라이트", 18, toggle_uv, Ui.sans_b)
-	tb.add_child(uvb)
-	tb.add_child(Ui.button("H   단서 위치", 18, hint, Ui.sans_b))
-	tb.add_child(Ui.button("R   정면으로", 18, reset_view, Ui.sans_b))
+	var tb := Ui.hbox(18 if Game.touch else 30)
+	Ui.pin(tb, 0.5, 1, 0, -70 if Game.touch else -58, 0, -1)
+	var uvb: Button
+	if Game.touch:
+		uvb = Ui.button("UV 라이트", 22, toggle_uv, Ui.sans_b)
+		tb.add_child(uvb)
+		tb.add_child(Ui.button("단서 위치", 22, hint, Ui.sans_b))
+		tb.add_child(Ui.button("정면으로", 22, reset_view, Ui.sans_b))
+		for b in tb.get_children():
+			_tool_style(b, false)
+	else:
+		uvb = Ui.button("U   UV 라이트", 18, toggle_uv, Ui.sans_b)
+		tb.add_child(uvb)
+		tb.add_child(Ui.button("H   단서 위치", 18, hint, Ui.sans_b))
+		tb.add_child(Ui.button("R   정면으로", 18, reset_view, Ui.sans_b))
 	root.add_child(tb)
 	U.uvb = uvb
-	var help := Ui.shadow(Ui.label("끌어서 돌려 보기   ·   휠로 확대   ·   수상한 곳을 클릭", 14, Color(1, 1, 1, 0.42), Ui.sans))
+	var uvnote := Ui.shadow(Ui.label("UV 라이트 켜짐 — 보랏빛으로 드러난 흔적을 " + ("눌러" if Game.touch else "클릭해") + " 조사한다", 16, Color("cdb8ff"), Ui.sans_b), 3)
+	Ui.pin(uvnote, 0.5, 0, 0, 178, 0, 1)
+	uvnote.visible = false
+	root.add_child(uvnote)
+	U.uvnote = uvnote
+	var help := Ui.shadow(Ui.label("끌어서 돌려 보기   ·   두 손가락으로 확대   ·   수상한 곳을 누르기" if Game.touch else "끌어서 돌려 보기   ·   휠로 확대   ·   수상한 곳을 클릭", 14, Color(1, 1, 1, 0.42), Ui.sans))
 	Ui.pin(help, 0.5, 1, 0, -26, 0, -1)
 	root.add_child(help)
 	var tip := Ui.label("조사하기", 14, Ui.INK, Ui.sans_b)
@@ -690,3 +729,20 @@ func _build_ui() -> void:
 	tipp.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(tipp)
 	U.tip = tipp
+
+
+func _tool_style(b: Button, on: bool) -> void:
+	for st in ["normal", "hover", "pressed", "hover_pressed"]:
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = Color(0.36, 0.2, 0.62, 0.55) if on else Color(0, 0, 0, 0.5)
+		sb.border_color = Color("cdb8ff") if on else Color(1, 1, 1, 0.28)
+		sb.set_border_width_all(2)
+		sb.set_corner_radius_all(4)
+		sb.content_margin_left = 26
+		sb.content_margin_right = 26
+		sb.content_margin_top = 14
+		sb.content_margin_bottom = 12
+		b.add_theme_stylebox_override(st, sb)
+	b.flat = false
+	b.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	b.custom_minimum_size = Vector2(170, 62)

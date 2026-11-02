@@ -14,6 +14,7 @@ fs.copyFileSync(path.join(root, 'site', 'index.html'), path.join(out, 'index.htm
 fs.cpSync(path.join(root, 'site', 'img'), path.join(out, 'img'), { recursive: true });
 fs.copyFileSync(path.join(root, 'assets', 'tex', 'icon.png'), path.join(out, 'icon.png'));
 fs.writeFileSync(path.join(out, '.nojekyll'), '');
+fs.copyFileSync(path.join(root, 'site', 'version.json'), path.join(out, 'version.json'));
 
 // 웹 버전 첫 화면: 불러오는 중 화면과 세로 화면 안내를 게임 분위기에 맞춘다
 const p = path.join(out, 'play', 'index.html');

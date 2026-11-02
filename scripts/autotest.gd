@@ -146,6 +146,21 @@ func run(o: String, ei: int, full: bool) -> void:
 			await _wait(0.5)
 			await _shot("item_" + d.id)
 			shown += 1
+	# UV 무늬가 있는 물건: 무늬 쪽으로 돌리고 UV를 켜서 찍는다
+	for d in E.items:
+		if not Game.S.kept.has(d.id) or not ins.models.has(d.id):
+			continue
+		var uvs: Array = ins.models[d.id].res.get("uv", [])
+		if uvs.is_empty():
+			continue
+		ins.select(d.id)
+		await _wait(0.4)
+		if uvs[0].position.y < 0.0:
+			ins.pivot.rotate_x(PI)
+		ins._set_uv(true)
+		await _wait(0.4)
+		await _shot("uvitem_" + d.id)
+		ins._set_uv(false)
 	if not full:
 		get_tree().quit()
 		return
@@ -477,4 +492,187 @@ func touch_test(o: String, ei: int) -> void:
 	await _wait(0.6)
 	print("TOUCH pause visible=", Game.pause_root.visible)
 	await _shot("touch_pause")
+	get_tree().quit()
+
+
+# ───────────── 보관함 · 업데이트 노트 · 크레딧 점검 (--featuretest)
+func feature_test(o: String) -> void:
+	out = o
+	DirAccess.make_dir_recursive_absolute(out)
+	Game.save.erase("seen_notes")
+	Game.show_title()
+	await _wait(1.2)
+	await _shot("title_new")
+	Game.open_updates()
+	await _wait(0.5)
+	await _shot("updates")
+	print("FEAT seen_notes=", Game.save.get("seen_notes", ""), " updates=", Game.UPDATES.size())
+	Game.close_modal()
+	Game.show_title()
+	await _wait(0.6)
+	await _shot("title_seen")
+	Game.show_credits()
+	await _wait(11.0)
+	await _shot("credits")
+	Game.show_brief(Game.EPISODES[0])
+	await _wait(0.3)
+	Game.enter_room()
+	for i in range(80):
+		if Game.pause_root.visible:
+			break
+		await _wait(0.1)
+	Game.hide_pause()
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	await _wait(0.6)
+	var room = Game.world
+	var tr = null
+	var kp = null
+	for it in room.items:
+		if it.hidden:
+			continue
+		if tr == null and it.def.kind == "trash":
+			tr = it
+		elif kp == null and it.def.kind == "keep":
+			kp = it
+	room.sort_item(tr, true)
+	room.sort_item(kp, true)
+	await _wait(0.6)
+	print("FEAT kept=", room.kept_items().size(), " err=", Game.S.err.kept_trash, " sorted=", Game.S.sorted.size())
+	await _key(KEY_I)
+	await _wait(0.4)
+	print("FEAT inventory open=", Game.modal_open)
+	await _shot("inventory")
+	room.take_out(tr)
+	Game.open_inventory()
+	await _wait(0.3)
+	await _shot("inventory_after")
+	print("FEAT after take_out kept=", room.kept_items().size(), " err=", Game.S.err.kept_trash, " state=", tr.state, " visible=", tr.root.visible, " scale=", tr.root.scale, " shape_off=", tr.shape.disabled)
+	await _key(KEY_I)
+	await _wait(0.3)
+	print("FEAT inventory closed=", not Game.modal_open, " paused=", Game.paused)
+	room.yaw = 0.0
+	await _wait(0.4)
+	get_tree().quit()
+
+
+# ───────────── 터치로 조사 단계 버튼 누르기 (--touch --uvtouchtest)
+func uv_touch_test(o: String, ei: int) -> void:
+	out = o
+	DirAccess.make_dir_recursive_absolute(out)
+	await _wait(1.0)
+	Game.show_brief(Game.EPISODES[ei])
+	await _wait(0.3)
+	Game.enter_room()
+	for i in range(80):
+		if Game.pause_root.visible:
+			break
+		await _wait(0.1)
+	Game.hide_pause()
+	await _wait(0.5)
+	var room = Game.world
+	for it in room.items:
+		if it.state != "gone":
+			room.sort_item(it, it.def.kind != "trash")
+	for s2 in room.stains:
+		s2.done = true
+		s2.progress = 1.0
+	room.complete = true
+	room.try_exit()
+	await _wait(2.4)
+	var ins = Game.world
+	var c: Vector2 = ins.U.uvb.get_global_rect().get_center()
+	print("UVT before=", ins.uv, " btn=", c)
+	await _touch(0, c, true)
+	await _wait(0.1)
+	await _touch(0, c, false)
+	await _wait(0.3)
+	print("UVT after one tap=", ins.uv)
+	await _shot("uv_tap")
+	await _touch(0, c, true)
+	await _wait(0.1)
+	await _touch(0, c, false)
+	await _wait(0.3)
+	print("UVT after two taps=", ins.uv)
+	get_tree().quit()
+
+
+# ───────────── 웹에서 실제 브라우저 터치를 기다리며 UV 상태 기록 (--uvwait)
+func uv_wait_test(ei: int) -> void:
+	await _wait(1.0)
+	Game.show_brief(Game.EPISODES[ei])
+	await _wait(0.3)
+	Game.enter_room()
+	for i in range(80):
+		if Game.pause_root.visible:
+			break
+		await _wait(0.1)
+	Game.hide_pause()
+	await _wait(0.5)
+	var room = Game.world
+	for it in room.items:
+		if it.state != "gone":
+			room.sort_item(it, it.def.kind != "trash")
+	for s2 in room.stains:
+		s2.done = true
+		s2.progress = 1.0
+	room.complete = true
+	room.try_exit()
+	await _wait(2.4)
+	var ins = Game.world
+	var vr := get_viewport().get_visible_rect().size
+	var c: Vector2 = ins.U.uvb.get_global_rect().get_center() * Vector2(DisplayServer.window_get_size()) / vr
+	print("UVW ready css=", c.x, ",", c.y, " touch=", Game.touch)
+	var last: bool = ins.uv
+	var flips := 0
+	for i in range(600):
+		await get_tree().process_frame
+		if ins.uv != last:
+			last = ins.uv
+			flips += 1
+			print("UVW flip ", flips, " uv=", last, " frame=", i)
+	print("UVW done flips=", flips, " uv=", ins.uv)
+
+
+# ───────────── 설정 화면 · 새 버전 알림 점검 (--settingstest)
+func _btns(text: String) -> Array:
+	var out_b := []
+	for b in Game.modal_root.find_children("*", "Button", true, false):
+		if b.visible and b.text == text:
+			out_b.append(b)
+	return out_b
+
+
+func settings_test(o: String) -> void:
+	out = o
+	DirAccess.make_dir_recursive_absolute(out)
+	await _wait(1.0)
+	Game.open_settings()
+	await _wait(0.4)
+	await _shot("settings")
+	var offs := _btns("끄기")
+	var bob_off: Button = offs[1] if not Game.touch else offs[0]
+	bob_off.pressed.emit()
+	_btns("+")[0].pressed.emit()
+	await _wait(0.3)
+	print("SET bob=", Game.settings.bob, " bright=", Game.settings.bright)
+	await _shot("settings_changed")
+	for b in Game.modal_root.find_children("*", "Button", true, false):
+		if b.text == "기본값으로":
+			b.pressed.emit()
+			break
+	await _wait(0.3)
+	print("SET after reset bob=", Game.settings.bob, " bright=", Game.settings.bright)
+	Game.close_modal()
+	var d := {"version": "9.9.9", "notes": ["시험용 알림"], "windows": "http://127.0.0.1:8767/LastRoom-Setup-1.2.0.exe", "page": "https://eunyool10.github.io/LastRoom/"}
+	Game._show_update(d)
+	await _wait(0.4)
+	await _shot("update_notice")
+	if not Game.touch:
+		Game._do_update(d, "windows")
+		for i in range(120):
+			await _wait(0.25)
+			if not is_instance_valid(Game._upd_dl):
+				break
+		await _wait(1.6)
+		await _shot("update_done")
 	get_tree().quit()

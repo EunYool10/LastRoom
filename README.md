@@ -24,14 +24,16 @@
 
 | 기기 | 받는 것 | 단계 |
 | --- | --- | --- |
-| Windows | 설치 파일 `LastRoom-Setup-1.1.0.exe` | 정식 1.1.0 |
-| Android | APK `LastRoom-1.2.0-beta-android.apk` (Android 7.0 이상) | 테스트 베타 1.2.0 |
-| Mac | 앱 압축 파일 `LastRoom-1.2.0-beta-mac.zip` (Apple 칩 · Intel) | 테스트 베타 1.2.0 |
+| Windows | 설치 파일 `LastRoom-Setup-1.2.0.exe` | 정식 1.2.0 |
+| Android | APK `LastRoom-1.2.0-android.apk` (Android 7.0 이상) | 테스트 베타 1.2.0 |
+| Mac | 앱 압축 파일 `LastRoom-1.2.0-mac.zip` (Apple 칩 · Intel) | 테스트 베타 1.2.0 |
 | iPhone · iPad · 브라우저 | [웹 버전](https://eunyool10.github.io/LastRoom/play/) — 설치 없이 실행, 홈 화면에 추가 가능 | 테스트 베타 1.2.0 |
+
+1.2.0부터는 게임을 켤 때 새 버전이 있는지 확인합니다. Windows는 게임 안에서 **지금 업데이트**를 누르면 새 설치 파일을 받아 덮어 설치하고 다시 켭니다. Android는 새 APK를 받아 열면 기존 앱 위에 업데이트됩니다. 웹 버전은 늘 새 버전으로 열립니다. 저장 기록은 그대로 남습니다.
 
 ## 설치 방법 (Windows)
 
-1. [Releases](../../releases/latest)에서 `LastRoom-Setup-1.1.0.exe`를 내려받아 실행합니다.
+1. [Releases](../../releases/latest)에서 `LastRoom-Setup-1.2.0.exe`를 내려받아 실행합니다.
 2. 설치 화면에서 **이용 안내**를 읽고 **동의함**을 누릅니다.
 3. 설치 위치를 확인하고 **설치**를 누릅니다.
 4. 바탕 화면이나 시작 메뉴의 **마지막 방**으로 실행합니다.
@@ -56,6 +58,7 @@
 | Q | 폐기 |
 | X 또는 오른쪽 클릭 | 내려놓기 |
 | F | 손전등 |
+| I 또는 Tab | 보관함 (넣은 물건 보기 · 다시 꺼내기) |
 | U / H / R | (유품 조사) UV 라이트 / 단서 위치 / 정면 보기 |
 | Esc / F11 | 멈춤 / 전체 화면 |
 
