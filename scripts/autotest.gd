@@ -370,3 +370,111 @@ func pause_test(o: String, ei: int) -> void:
 	await _wait(0.6)
 	await _shot("after_resume")
 	get_tree().quit()
+
+
+# ───────────── 터치 조작 점검 (--touch --touchtest)
+func _wp(p: Vector2) -> Vector2:
+	var vr := get_viewport().get_visible_rect().size
+	return p * Vector2(DisplayServer.window_get_size()) / vr
+
+
+func _touch(idx: int, p: Vector2, on: bool) -> void:
+	var e := InputEventScreenTouch.new()
+	e.index = idx
+	e.position = _wp(p)
+	e.pressed = on
+	Input.parse_input_event(e)
+	await get_tree().process_frame
+	await get_tree().physics_frame
+
+
+func _tdrag(idx: int, a: Vector2, b: Vector2, steps: int) -> void:
+	for i in steps:
+		var e := InputEventScreenDrag.new()
+		e.index = idx
+		e.position = _wp(a.lerp(b, float(i + 1) / steps))
+		e.relative = _wp(b - a) / steps
+		Input.parse_input_event(e)
+		await get_tree().physics_frame
+
+
+func _btn(room, id: String) -> Vector2:
+	room.touchpad._layout()
+	for b in room.touchpad.btns:
+		if b.id == id:
+			return b.c
+	return Vector2(-1, -1)
+
+
+func _tap(room, id: String, hold := 0.0) -> void:
+	var c := _btn(room, id)
+	await _touch(3, c, true)
+	if hold > 0.0:
+		await _wait(hold)
+	await _touch(3, c, false)
+
+
+func touch_test(o: String, ei: int) -> void:
+	out = o
+	DirAccess.make_dir_recursive_absolute(out)
+	await _wait(1.0)
+	Game.show_brief(Game.EPISODES[ei])
+	await _wait(0.3)
+	Game.enter_room()
+	for i in range(80):
+		if Game.pause_root.visible:
+			break
+		await _wait(0.1)
+	await _wait(0.6)
+	await _shot("touch_pause_first")
+	Game.hide_pause()
+	await _wait(1.0)
+	var room = Game.world
+	var vr := get_viewport().get_visible_rect().size
+	print("TOUCH touch=", Game.touch, " pad=", room.touchpad != null, " vr=", vr, " win=", DisplayServer.window_get_size())
+	await _shot("touch_hud")
+	var p0: Vector3 = room.player.position
+	var sb := Vector2(170, vr.y - 175)
+	await _touch(0, sb, true)
+	await _tdrag(0, sb, sb + Vector2(0, -90), 10)
+	await _wait(0.6)
+	await _touch(0, sb + Vector2(0, -90), false)
+	print("TOUCH move dist=%.2f tmove_after=%s" % [room.player.position.distance_to(p0), room.tmove])
+	var y0: float = room.yaw
+	var lp := Vector2(vr.x * 0.6, vr.y * 0.4)
+	await _touch(1, lp, true)
+	await _tdrag(1, lp, lp + Vector2(220, 0), 10)
+	await _touch(1, lp + Vector2(220, 0), false)
+	print("TOUCH look dyaw=%.2f" % (room.yaw - y0))
+	await _tap(room, "t2")
+	var t2: int = room.tool
+	await _tap(room, "t1")
+	print("TOUCH tool after t2=%d after t1=%d" % [t2, room.tool])
+	var done := 0
+	for it in room.items:
+		if done >= 2 or it.hidden or it.state != "idle" or it.def.kind == "clue":
+			continue
+		done += 1
+		await _face(room, it.root.global_position + Vector3(0, 0.03, 0))
+		await _tap(room, "use")
+		await _wait(0.3)
+		var opened: bool = room.card != null
+		if done == 1:
+			await _shot("touch_card")
+		await _tap(room, "keep" if it.def.kind != "trash" else "trash")
+		await _wait(0.5)
+		print("TOUCH item=%s card=%s state=%s" % [it.def.id, opened, it.state])
+	var st = room.stains[0]
+	var sp := Vector3(st.def.pos[0], 0, st.def.pos[2])
+	await _face(room, sp + Vector3(0, 0.02, 0), 1.0)
+	var pr0: float = st.progress
+	await _tap(room, "t2")
+	await _tap(room, "use", 1.6)
+	await _tap(room, "t3")
+	await _tap(room, "use", 3.0)
+	print("TOUCH stain progress %.2f -> %.2f aim=%s" % [pr0, st.progress, room.aim.type if room.aim else "none"])
+	await _tap(room, "pause")
+	await _wait(0.6)
+	print("TOUCH pause visible=", Game.pause_root.visible)
+	await _shot("touch_pause")
+	get_tree().quit()

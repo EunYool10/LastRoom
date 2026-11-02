@@ -52,6 +52,8 @@ var first_item_hint := false
 var sens := 0.0022
 var hud: CanvasLayer
 var H_ := {}
+var tmove := Vector2.ZERO
+var touchpad: Control
 
 
 func setup(e: Dictionary, state: Dictionary, is_preview := false) -> void:
@@ -473,6 +475,7 @@ func _build_hud() -> void:
 		var l := Ui.shadow(Ui.label(["1  손", "2  소독 분무기", "3  스크러버"][i], 16, Ui.DIM, Ui.sans_b), 3)
 		tb.add_child(l)
 		H_.tools.append(l)
+	tb.visible = not Game.touch
 	root.add_child(tb)
 	var fl := Ui.shadow(Ui.label("", 14, Ui.DIM, Ui.sans), 3)
 	Ui.pin(fl, 1, 1, -32, -30, -1, -1)
@@ -494,9 +497,12 @@ func _build_hud() -> void:
 	line.color = Color(Ui.INK, 0.25)
 	line.custom_minimum_size = Vector2(0, 1)
 	cv.add_child(line)
-	cv.add_child(Ui.label("왼쪽 클릭 · E     보관함에 넣기", 16, Ui.INK, Ui.sans_b))
-	cv.add_child(Ui.label("Q     폐기", 16, Ui.INK, Ui.sans_b))
-	cv.add_child(Ui.label("오른쪽 클릭 · X     내려놓기", 16, Ui.INK, Ui.sans_b))
+	if Game.touch:
+		cv.add_child(Ui.label("보관 · 폐기 · 내려놓기 중에 고른다", 16, Ui.INK, Ui.sans_b))
+	else:
+		cv.add_child(Ui.label("왼쪽 클릭 · E     보관함에 넣기", 16, Ui.INK, Ui.sans_b))
+		cv.add_child(Ui.label("Q     폐기", 16, Ui.INK, Ui.sans_b))
+		cv.add_child(Ui.label("오른쪽 클릭 · X     내려놓기", 16, Ui.INK, Ui.sans_b))
 	var cm := Ui.label("", 15, Ui.RED, Ui.sans, true)
 	cm.custom_minimum_size = Vector2(326, 0)
 	cv.add_child(cm)
@@ -508,6 +514,10 @@ func _build_hud() -> void:
 	H_.cname = cn
 	H_.cdesc = cd
 	H_.cmsg = cm
+	if Game.touch and not preview:
+		touchpad = load("res://scripts/touch.gd").new()
+		touchpad.room = self
+		root.add_child(touchpad)
 
 
 func _counts() -> Dictionary:
@@ -553,24 +563,24 @@ func _update_prompt() -> void:
 			"item":
 				if aim.dist < 2.4:
 					n = aim.obj.def.name
-					h = "E  살펴보기     Q  바로 폐기"
+					h = "집기 버튼으로 살펴보기" if Game.touch else "E  살펴보기     Q  바로 폐기"
 			"env":
 				if aim.dist < 2.4:
 					n = aim.obj.def.name
-					h = "E  조사하기"
+					h = "집기 버튼으로 조사하기" if Game.touch else "E  조사하기"
 			"door":
 				if aim.dist < 2.6:
 					n = "현관문"
-					h = "E  작업 종료 · 작업실로" if complete else "아직 정리가 남았다"
+					h = ("집기 버튼: 작업 종료 · 작업실로" if Game.touch else "E  작업 종료 · 작업실로") if complete else "아직 정리가 남았다"
 			"stain":
 				var st: Stain = aim.obj
 				if not st.done and aim.dist < 2.9:
 					n = st.def.name
-					var how := "2 분무기  ·  3 스크러버"
+					var how := "분무기  ·  스크러버" if Game.touch else "2 분무기  ·  3 스크러버"
 					if tool == 2:
-						how = "클릭 유지: 소독약 분사"
+						how = "뿌리기 버튼을 누르고 있기" if Game.touch else "클릭 유지: 소독약 분사"
 					elif tool == 3:
-						how = "클릭 유지 + 마우스로 문지르기" if aim.dist < 2.2 else "조금 더 가까이"
+						how = ("문지르기 버튼을 누르고 있기" if Game.touch else "클릭 유지 + 마우스로 문지르기") if aim.dist < 2.2 else "조금 더 가까이"
 					h = "오염도 %d%%   ·   %s" % [int((1.0 - max(0.0, st.progress)) * 100), how]
 		live = n != ""
 	H_.pname.text = n
@@ -583,6 +593,8 @@ func _update_prompt() -> void:
 # ───────────────────────────── 입력
 func _unhandled_input(event: InputEvent) -> void:
 	if preview or Game.paused or exiting:
+		return
+	if Game.touch and (event is InputEventMouseButton or event is InputEventMouseMotion):
 		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		var rel: Vector2 = event.relative
@@ -616,6 +628,15 @@ func _unhandled_input(event: InputEvent) -> void:
 				if card != null:
 					card_action("cancel")
 			KEY_F: toggle_flash()
+
+
+func look(rel: Vector2) -> void:
+	var s := sens * 1.5
+	if using and tool == 3:
+		scrub_motion += abs(rel.x) + abs(rel.y)
+		s *= 0.25
+	yaw -= rel.x * s
+	pitch = clamp(pitch - rel.y * s, -1.45, 1.45)
 
 
 func set_use(v: bool) -> void:
@@ -858,7 +879,10 @@ func _physics_process(dt: float) -> void:
 			inp.x += 1
 		if Input.is_physical_key_pressed(KEY_A) or Input.is_physical_key_pressed(KEY_LEFT):
 			inp.x -= 1
+	inp += Vector2(tmove.x, -tmove.y)
 	inp = inp.limit_length(1.0)
+	if Game.touch and using and tool == 3 and card == null:
+		scrub_motion += 700.0 * dt
 	player.rotation.y = yaw
 	head.rotation.x = pitch
 	var b := player.global_transform.basis
@@ -901,7 +925,7 @@ func _physics_process(dt: float) -> void:
 				scrub_on = 0.2 + motion * 0.25
 				if f < 0.08 and not no_foam_warned.has(st.def.id) and st.progress < 0.5:
 					no_foam_warned[st.def.id] = true
-					Game.say("(잘 안 닦인다. [2] 소독약을 먼저 뿌리자.)", 2.6)
+					Game.say("(잘 안 닦인다. 분무기로 소독약을 먼저 뿌리자.)" if Game.touch else "(잘 안 닦인다. [2] 소독약을 먼저 뿌리자.)", 2.6)
 	scrub_motion = 0.0
 	Sfx.set_loop("spray", spray_on)
 	Sfx.set_loop("scrub", scrub_on)

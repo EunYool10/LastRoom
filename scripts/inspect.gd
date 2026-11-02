@@ -479,6 +479,33 @@ func _pick(mpos: Vector2):
 	return null
 
 
+var touches := {}
+
+
+func _input(event: InputEvent) -> void:
+	# 두 손가락으로 벌리고 오므려 확대 · 축소
+	if not Game.touch or Game.modal_open:
+		return
+	if event is InputEventScreenTouch:
+		if event.pressed:
+			touches[event.index] = event.position
+		else:
+			touches.erase(event.index)
+		if touches.size() >= 2:
+			drag = null
+	elif event is InputEventScreenDrag and touches.has(event.index):
+		if touches.size() >= 2:
+			var ks := touches.keys()
+			var d0: float = touches[ks[0]].distance_to(touches[ks[1]])
+			touches[event.index] = event.position
+			var d1: float = touches[ks[0]].distance_to(touches[ks[1]])
+			if d0 > 10.0:
+				zoom = clamp(zoom * d1 / d0, 0.6, 2.8)
+			drag = null
+		else:
+			touches[event.index] = event.position
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if Game.modal_open:
 		return

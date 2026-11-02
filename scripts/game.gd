@@ -18,6 +18,7 @@ var board: Control = null
 var paused := false
 var modal_open := false
 var first_entry := false
+var touch := false
 
 var ui: CanvasLayer
 var screen: Control
@@ -41,6 +42,7 @@ var note_timer := 0.0
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	touch = OS.has_feature("mobile") or OS.has_feature("web_android") or OS.has_feature("web_ios") 		or (OS.has_feature("web_macos") and DisplayServer.is_touchscreen_available()) or OS.get_cmdline_user_args().has("--touch")
 	Ui.init()
 	_load_data()
 	_load_save()
@@ -62,7 +64,9 @@ func _ready() -> void:
 		for a in args:
 			if a.begins_with("--ep="):
 				ei = int(a.substr(5))
-		if args.has("--pausetest"):
+		if args.has("--touchtest"):
+			at.touch_test(test, ei)
+		elif args.has("--pausetest"):
 			at.pause_test(test, ei)
 		elif args.has("--inputtest"):
 			at.input_test(test, ei)
@@ -99,7 +103,8 @@ func write_save() -> void:
 
 func _apply_settings() -> void:
 	Sfx.set_master(float(settings.volume))
-	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN if settings.fullscreen else DisplayServer.WINDOW_MODE_MAXIMIZED)
+	if not touch:
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN if settings.fullscreen else DisplayServer.WINDOW_MODE_MAXIMIZED)
 
 
 # ───────────────────────────── 레이어
@@ -253,7 +258,10 @@ func show_title() -> void:
 	for i in EPISODES.size():
 		col.add_child(_ep_row(i))
 	col.add_child(Ui.gap(30))
-	for m in [["설정", open_settings], ["조작법", open_help], ["기록 지우기", _reset_save], ["만든 사람들", func(): fade(show_credits)], ["끝내기", func(): get_tree().quit()]]:
+	var menu := [["설정", open_settings], ["조작법", open_help], ["기록 지우기", _reset_save], ["만든 사람들", func(): fade(show_credits)]]
+	if not OS.has_feature("web"):
+		menu.append(["끝내기", func(): get_tree().quit()])
+	for m in menu:
 		var b := Ui.button(m[0], 20, m[1], Ui.serif, Color("b9b1a4"))
 		b.custom_minimum_size = Vector2(160, 0)
 		col.add_child(b)
@@ -467,7 +475,10 @@ func show_pause(first := false) -> void:
 	var cv := Ui.vbox(13)
 	cv.add_child(Ui.label("조작", 15, Ui.ACCENT, Ui.spaced))
 	cv.add_child(Ui.gap(2))
-	for row in [[["W", "A", "S", "D"], "이동"], [["마우스"], "둘러보기"], [["1", "2", "3"], "손 · 소독 분무기 · 스크러버"], [["왼쪽 클릭 유지"], "도구 사용 · 스크러버는 누른 채 문지르기"], [["E"], "집어 보기 · 조사 · 보관함에 넣기"], [["Q"], "폐기"], [["X", "오른쪽 클릭"], "내려놓기"], [["F"], "손전등"]]:
+	var rows := [[["W", "A", "S", "D"], "이동"], [["마우스"], "둘러보기"], [["1", "2", "3"], "손 · 소독 분무기 · 스크러버"], [["왼쪽 클릭 유지"], "도구 사용 · 스크러버는 누른 채 문지르기"], [["E"], "집어 보기 · 조사 · 보관함에 넣기"], [["Q"], "폐기"], [["X", "오른쪽 클릭"], "내려놓기"], [["F"], "손전등"]]
+	if touch:
+		rows = [[["왼쪽 화면 끌기"], "이동"], [["오른쪽 화면 끌기"], "둘러보기"], [["손", "분무기", "스크러버"], "도구 바꾸기"], [["집기 · 뿌리기"], "누르고 있으면 도구 사용"], [["보관", "폐기"], "들고 있는 물건 분류"], [["내려놓기"], "제자리에 두기"], [["손전등"], "손전등 켜고 끄기"]]
+	for row in rows:
 		var r := Ui.hbox(16)
 		var caps := Ui.hbox(4)
 		caps.custom_minimum_size = Vector2(196, 0)
@@ -480,9 +491,10 @@ func show_pause(first := false) -> void:
 		cv.add_child(r)
 	card.add_child(cv)
 	pause_root.add_child(card)
-	var hint := Ui.label("Esc   " + ("작업 시작" if first else "계속하기"), 14, Color(1, 1, 1, 0.38), Ui.sans)
-	Ui.pin(hint, 0, 1, 130, -44, 1, -1)
-	pause_root.add_child(hint)
+	if not touch:
+		var hint := Ui.label("Esc   " + ("작업 시작" if first else "계속하기"), 14, Color(1, 1, 1, 0.38), Ui.sans)
+		Ui.pin(hint, 0, 1, 130, -44, 1, -1)
+		pause_root.add_child(hint)
 	pause_root.visible = true
 
 
@@ -491,14 +503,33 @@ func hide_pause() -> void:
 	_room_overlays(true)
 	_unpause()
 	if stage == "room":
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		capture_mouse()
 		if first_entry:
 			first_entry = false
 			for l in ep.intro:
 				say(l, 3.8)
-			if int(ep.no) == 1:
+			if int(ep.no) == 1 and touch:
+				say("왼쪽 화면을 끌어 걷고, 오른쪽 화면을 끌어 둘러본다.", 4.6)
+				say("분무기로 얼룩에 소독약을 뿌리고, 스크러버로 문질러 닦는다.", 5.2)
+				say("물건은 집기 버튼으로 들고, 보관할지 버릴지 정한다.", 4.6)
+			elif int(ep.no) == 1:
 				say("[2] 소독 분무기로 얼룩에 소독약을 뿌리고, [3] 스크러버로 문질러 닦는다.", 5.2)
 				say("물건은 [E]로 집어 보관할지 버릴지 정한다. 손전등은 [F].", 4.6)
+
+
+func capture_mouse() -> void:
+	if not touch:
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+func _notification(what: int) -> void:
+	# 안드로이드 뒤로 가기 = Esc
+	if what == NOTIFICATION_WM_GO_BACK_REQUEST:
+		var ev := InputEventKey.new()
+		ev.physical_keycode = KEY_ESCAPE
+		ev.keycode = KEY_ESCAPE
+		ev.pressed = true
+		Input.parse_input_event(ev)
 
 
 func _unpause() -> void:
@@ -877,7 +908,7 @@ func close_modal(silent := false) -> void:
 	modal_close_cb = Callable()
 	if stage == "room" and not pause_root.visible:
 		_unpause()
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		capture_mouse()
 	if cb.is_valid() and not silent:
 		cb.call()
 
@@ -912,7 +943,10 @@ func open_help() -> void:
 	grid.columns = 2
 	grid.add_theme_constant_override("h_separation", 30)
 	grid.add_theme_constant_override("v_separation", 7)
-	for kv in [["1단계 · 현장 정리", ""], ["W A S D / 마우스", "이동 / 둘러보기"], ["1 · 2 · 3, 휠", "손 · 소독 분무기 · 스크러버"], ["왼쪽 버튼 누르고 있기", "도구 사용. 소독약을 먼저 뿌려야 잘 닦인다"], ["E / Q / X", "집어 보기 · 보관 / 폐기 / 내려놓기"], ["F", "손전등"], ["", ""], ["2단계 · 유품 조사", ""], ["끌기 / 휠", "돌려 보기 / 확대"], ["클릭", "수상한 곳 조사"], ["U / H / R", "UV 라이트 / 단서 위치 / 정면"], ["", ""], ["3단계 · 사건 재구성", ""], ["쪽지 · 보기 선택", "답과 근거 단서(최대 2장)를 고른다"], ["", ""], ["Esc / F11", "멈춤 / 전체 화면"]]:
+	var keys := [["1단계 · 현장 정리", ""], ["W A S D / 마우스", "이동 / 둘러보기"], ["1 · 2 · 3, 휠", "손 · 소독 분무기 · 스크러버"], ["왼쪽 버튼 누르고 있기", "도구 사용. 소독약을 먼저 뿌려야 잘 닦인다"], ["E / Q / X", "집어 보기 · 보관 / 폐기 / 내려놓기"], ["F", "손전등"], ["", ""], ["2단계 · 유품 조사", ""], ["끌기 / 휠", "돌려 보기 / 확대"], ["클릭", "수상한 곳 조사"], ["U / H / R", "UV 라이트 / 단서 위치 / 정면"], ["", ""], ["3단계 · 사건 재구성", ""], ["쪽지 · 보기 선택", "답과 근거 단서(최대 2장)를 고른다"], ["", ""], ["Esc / F11", "멈춤 / 전체 화면"]]
+	if touch:
+		keys = [["1단계 · 현장 정리", ""], ["왼쪽 / 오른쪽 화면 끌기", "이동 / 둘러보기"], ["손 · 분무기 · 스크러버", "도구 바꾸기"], ["집기 · 뿌리기 · 문지르기", "누르고 있으면 도구 사용. 소독약을 먼저 뿌려야 잘 닦인다"], ["보관 / 폐기 / 내려놓기", "들고 있는 물건 분류"], ["손전등 · 멈춤", "오른쪽 · 왼쪽 위 버튼"], ["", ""], ["2단계 · 유품 조사", ""], ["끌기 / 두 손가락", "돌려 보기 / 확대"], ["누르기", "수상한 곳 조사"], ["UV · 단서 위치 · 정면", "화면 아래 버튼"], ["", ""], ["3단계 · 사건 재구성", ""], ["쪽지 · 보기 선택", "답과 근거 단서(최대 2장)를 고른다"]]
+	for kv in keys:
 		var head: bool = kv[1] == "" and kv[0] != ""
 		grid.add_child(Ui.label(kv[0], 17 if head else 16, Ui.ACCENT if head else Color("e6e1d8"), Ui.serif_b if head else Ui.sans_b))
 		grid.add_child(Ui.label(kv[1], 16, Color("cfc9bf"), Ui.sans))
@@ -928,7 +962,7 @@ func open_settings() -> void:
 	p.custom_minimum_size = Vector2(520, 0)
 	var v := Ui.vbox(14)
 	v.add_child(Ui.label("설정", 30, Ui.TEXT, Ui.serif_b))
-	for spec in [["마우스 감도", "sens", 0.3, 2.5], ["소리 크기", "volume", 0.0, 1.0]]:
+	for spec in [["둘러보기 감도" if touch else "마우스 감도", "sens", 0.3, 2.5], ["소리 크기", "volume", 0.0, 1.0]]:
 		var row := Ui.hbox(20)
 		var l := Ui.label(spec[0], 17, Color("cfc9bf"), Ui.sans)
 		l.custom_minimum_size = Vector2(130, 0)
@@ -957,6 +991,7 @@ func open_settings() -> void:
 	fs.toggled.connect(func(on):
 		settings.fullscreen = on
 		_apply_settings())
+	fs.visible = not touch
 	v.add_child(fs)
 	v.add_child(Ui.gap(6))
 	v.add_child(_buttons_row([["닫기", func():
