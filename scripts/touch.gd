@@ -36,6 +36,7 @@ func _layout() -> void:
 		_add("flash", "손전등" if room.flash_on else "손전등 꺼짐", Vector2(s.x - 74 * k, s.y * 0.42), 42 * k, false)
 	_add("pause", "멈춤", Vector2(74 * k, 168), 38 * k, false)
 	_add("box", "보관함", Vector2(74 * k, 168 + 94 * k), 38 * k, false)
+	_add("crouch", "일어서기" if room.crouch_toggle else "숙이기", Vector2(74 * k, 168 + 188 * k), 38 * k, room.crouch_toggle)
 
 
 func _add(id: String, label: String, c: Vector2, r: float, strong: bool) -> void:
@@ -125,6 +126,8 @@ func _press(id: String) -> void:
 		"box":
 			held.clear()
 			Game.open_inventory()
+		"crouch":
+			room.crouch_toggle = not room.crouch_toggle
 
 
 func _release(id: String) -> void:

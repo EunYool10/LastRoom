@@ -676,3 +676,121 @@ func settings_test(o: String) -> void:
 		await _wait(1.6)
 		await _shot("update_done")
 	get_tree().quit()
+
+
+# ───────────── 얼룩 판정 · 숙이기 점검 (--cleantest)
+func _look_at_point(room, p: Vector3) -> void:
+	var c: Vector3 = room.cam.global_position
+	var to := p - c
+	room.yaw = atan2(-to.x, -to.z)
+	room.pitch = atan2(to.y, Vector2(to.x, to.z).length())
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+
+
+func clean_test(o: String, ei: int) -> void:
+	out = o
+	DirAccess.make_dir_recursive_absolute(out)
+	await _wait(1.0)
+	Game.show_brief(Game.EPISODES[ei])
+	await _wait(0.3)
+	Game.enter_room()
+	for i in range(80):
+		if Game.pause_root.visible:
+			break
+		await _wait(0.1)
+	Game.hide_pause()
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	await _wait(0.6)
+	var room = Game.world
+	# 숙이기
+	var y0: float = room.head.position.y
+	var e := InputEventKey.new()
+	e.physical_keycode = KEY_CTRL
+	e.keycode = KEY_CTRL
+	e.pressed = true
+	Input.parse_input_event(e)
+	await _wait(0.6)
+	var y1: float = room.head.position.y
+	await _shot("crouch")
+	var r := InputEventKey.new()
+	r.physical_keycode = KEY_CTRL
+	r.keycode = KEY_CTRL
+	r.pressed = false
+	Input.parse_input_event(r)
+	await _wait(0.6)
+	print("CLEAN crouch eye %.2f -> %.2f -> %.2f" % [y0, y1, room.head.position.y])
+	for st in room.stains:
+		var center: Vector3 = st.node.global_position
+		await _face(room, center, 1.0)
+		await _wait(0.1)
+		# 가장자리 바로 바깥
+		var edge: Vector3 = st.node.to_global(Vector3(st.w * 0.5 + 0.05, 0, 0))
+		await _look_at_point(room, edge)
+		var edge_ok: bool = room.stain_aim != null and room.stain_aim.obj == st
+		# 얼룩 위에 물건을 올려 두고 가운데를 겨누기
+		var blocker = null
+		for it in room.items:
+			if it.state == "idle" and not it.hidden:
+				blocker = it
+				break
+		var keep_pos: Vector3 = blocker.root.global_position
+		blocker.root.global_position = center + st.node.global_transform.basis.y * 0.02
+		await _look_at_point(room, center)
+		await _wait(0.05)
+		var blocked_type: String = room.aim.type if room.aim else "none"
+		var through_ok: bool = room.stain_aim != null and room.stain_aim.obj == st
+		blocker.root.global_position = keep_pos
+		# 뿌리고 문지르기: 얼룩 전체를 훑는다
+		var t0 := Time.get_ticks_msec()
+		var pts := []
+		var nx := int(ceil(st.w / 0.14))
+		var nz := int(ceil(st.h / 0.14))
+		for j in nz + 1:
+			for i in nx + 1:
+				pts.append(st.node.to_global(Vector3(-st.w * 0.5 + st.w * i / nx, 0, -st.h * 0.5 + st.h * j / nz)))
+		room.select_tool(2, true)
+		room.set_use(true)
+		for p in pts:
+			await _look_at_point(room, p)
+			await _wait(0.06)
+		room.set_use(false)
+		room.select_tool(3, true)
+		var passes := 0
+		while not st.done and passes < 4:
+			passes += 1
+			room.set_use(true)
+			for p in pts:
+				await _look_at_point(room, p)
+				for f in range(8):
+					room.scrub_motion += 25.0
+					await get_tree().physics_frame
+				if st.done:
+					break
+			room.set_use(false)
+		print("CLEAN %s %s edge=%s item_on_top=%s(%s) done=%s progress=%.2f passes=%d secs=%.1f" % [st.def.id, st.def.surf, edge_ok, through_ok, blocked_type, st.done, st.progress, passes, (Time.get_ticks_msec() - t0) / 1000.0])
+	get_tree().quit()
+
+
+# ───────────── 이용 안내 화면 (--termstest)
+func terms_test(o: String) -> void:
+	out = o
+	DirAccess.make_dir_recursive_absolute(out)
+	await _wait(1.0)
+	Game.open_terms(func(): print("TERMS agreed"))
+	await _wait(0.4)
+	await _shot("terms_agree")
+	for b in Game.modal_root.find_children("*", "Button", true, false):
+		if b.text == "동의하고 시작":
+			b.pressed.emit()
+	await _wait(0.3)
+	print("TERMS saved=", Game.save.get("terms_ok", ""), " modal=", Game.modal_open)
+	Game.save.erase("terms_ok")
+	Game.write_save()
+	Game.open_settings()
+	await _wait(0.3)
+	for sc in Game.modal_root.find_children("*", "ScrollContainer", true, false):
+		sc.scroll_vertical = 10000
+	await _wait(0.3)
+	await _shot("settings_bottom")
+	get_tree().quit()

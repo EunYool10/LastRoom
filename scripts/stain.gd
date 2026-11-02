@@ -173,12 +173,12 @@ func spray(uv: Vector2, radius: float, dt: float) -> void:
 ## 반환값: 문지른 곳의 평균 거품 양
 func scrub(uv: Vector2, dt: float, motion: float) -> float:
 	var fsum := 0.0
-	var cells := _cells(uv, 0.13)
+	var cells := _cells(uv, 0.15)
 	for c in cells:
 		var i: int = c[0]
-		var eff: float = (0.1 + 0.9 * min(1.0, foam[i] / 0.45)) * (0.35 + 0.65 * motion)
-		dirt[i] = max(0.0, dirt[i] - dt * 1.5 * c[1] * eff)
-		foam[i] = max(0.0, foam[i] - dt * 1.1 * c[1])
+		var eff: float = (0.2 + 0.8 * min(1.0, foam[i] / 0.35)) * (0.4 + 0.6 * motion)
+		dirt[i] = max(0.0, dirt[i] - dt * 2.1 * c[1] * eff)
+		foam[i] = max(0.0, foam[i] - dt * 0.55 * c[1])
 		fsum += foam[i]
 	dirty = true
 	return fsum / max(1, cells.size())
@@ -190,7 +190,7 @@ func update_progress() -> bool:
 	for i in dirt.size():
 		s += dirt[i]
 	progress = 1.0 - s / sum0 if sum0 > 0.0 else 1.0
-	if not done and progress >= 0.95:
+	if not done and progress >= 0.9:
 		done = true
 		fade = 1.0
 		return true

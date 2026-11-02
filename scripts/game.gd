@@ -5,11 +5,12 @@ const RoomScript := preload("res://scripts/room.gd")
 const InspectScript := preload("res://scripts/inspect.gd")
 const BoardScript := preload("res://scripts/board.gd")
 const SAVE_PATH := "user://save.json"
-const VERSION := "1.2.0"
+const VERSION := "1.2.1"
 
 var EPISODES: Array = []
 var FINAL_TEXT: Array = []
 var UPDATES: Array = []
+var TERMS: Dictionary = {}
 var ep: Dictionary = {}
 var S: Dictionary = {}
 var save := {}
@@ -69,7 +70,11 @@ func _ready() -> void:
 		for a in args:
 			if a.begins_with("--ep="):
 				ei = int(a.substr(5))
-		if args.has("--settingstest"):
+		if args.has("--termstest"):
+			at.terms_test(test)
+		elif args.has("--cleantest"):
+			at.clean_test(test, ei)
+		elif args.has("--settingstest"):
 			at.settings_test(test)
 		elif args.has("--uvwait"):
 			at.uv_wait_test(ei)
@@ -97,6 +102,11 @@ func _load_data() -> void:
 		var u = JSON.parse_string(uf.get_as_text())
 		if u is Array:
 			UPDATES = u
+	var tf := FileAccess.open("res://data/terms.json", FileAccess.READ)
+	if tf:
+		var t = JSON.parse_string(tf.get_as_text())
+		if t is Dictionary:
+			TERMS = t
 
 
 func _load_save() -> void:
@@ -299,6 +309,9 @@ func show_title() -> void:
 	var ver := Ui.label(("v%s" % VERSION) if touch else ("v%s      F11  전체 화면" % VERSION), 13, Color(1, 1, 1, 0.3), Ui.sans)
 	Ui.pin(ver, 1, 1, -30, -34, -1, -1)
 	root.add_child(ver)
+	if _needs_terms():
+		open_terms(func(): show_title())
+		return
 	if not update_checked and not testing and settings.get("autoupdate", true):
 		update_checked = true
 		check_update(false)
@@ -506,9 +519,9 @@ func show_pause(first := false) -> void:
 	var cv := Ui.vbox(13)
 	cv.add_child(Ui.label("조작", 15, Ui.ACCENT, Ui.spaced))
 	cv.add_child(Ui.gap(2))
-	var rows := [[["W", "A", "S", "D"], "이동"], [["마우스"], "둘러보기"], [["1", "2", "3"], "손 · 소독 분무기 · 스크러버"], [["왼쪽 클릭 유지"], "도구 사용 · 스크러버는 누른 채 문지르기"], [["E"], "집어 보기 · 조사 · 보관함에 넣기"], [["Q"], "폐기"], [["X", "오른쪽 클릭"], "내려놓기"], [["F"], "손전등"], [["I", "Tab"], "보관함 열기"]]
+	var rows := [[["W", "A", "S", "D"], "이동"], [["마우스"], "둘러보기"], [["1", "2", "3"], "손 · 소독 분무기 · 스크러버"], [["왼쪽 클릭 유지"], "도구 사용 · 스크러버는 누른 채 문지르기"], [["E"], "집어 보기 · 조사 · 보관함에 넣기"], [["Q"], "폐기"], [["X", "오른쪽 클릭"], "내려놓기"], [["F"], "손전등"], [["I", "Tab"], "보관함 열기"], [["C"] if OS.has_feature("web") else ["Ctrl"], "누르고 있는 동안 숙이기"]]
 	if touch:
-		rows = [[["왼쪽 화면 끌기"], "이동"], [["오른쪽 화면 끌기"], "둘러보기"], [["손", "분무기", "스크러버"], "도구 바꾸기"], [["집기 · 뿌리기"], "누르고 있으면 도구 사용"], [["보관", "폐기"], "들고 있는 물건 분류"], [["내려놓기"], "제자리에 두기"], [["손전등"], "손전등 켜고 끄기"], [["보관함"], "넣은 물건 보기 · 꺼내기"]]
+		rows = [[["왼쪽 화면 끌기"], "이동"], [["오른쪽 화면 끌기"], "둘러보기"], [["손", "분무기", "스크러버"], "도구 바꾸기"], [["집기 · 뿌리기"], "누르고 있으면 도구 사용"], [["보관", "폐기"], "들고 있는 물건 분류"], [["내려놓기"], "제자리에 두기"], [["손전등"], "손전등 켜고 끄기"], [["보관함"], "넣은 물건 보기 · 꺼내기"], [["숙이기"], "숙이기 · 일어서기"]]
 	for row in rows:
 		var r := Ui.hbox(16)
 		var caps := Ui.hbox(4)
@@ -1048,6 +1061,70 @@ func open_updates() -> void:
 	open_modal(p)
 
 
+# ───────────────────────────── 이용 안내 · 약관
+## 설치 프로그램이 없는 Android · Mac · 웹은 처음 켤 때(약관이 바뀌면 다시) 동의를 받는다
+func _needs_terms() -> bool:
+	if testing or TERMS.is_empty():
+		return false
+	if not (OS.has_feature("web") or OS.has_feature("android") or OS.has_feature("macos")):
+		return false
+	return str(save.get("terms_ok", "")) != str(TERMS.get("version", ""))
+
+
+func open_terms(agree_cb: Callable = Callable()) -> void:
+	if TERMS.is_empty():
+		return
+	var p := Ui.panel(Ui.paper_box(false, 40))
+	var v := Ui.vbox(8)
+	v.add_child(Ui.label(TERMS.get("subtitle", "이용 안내"), 14, Ui.INK_DIM, Ui.spaced))
+	v.add_child(Ui.label(TERMS.get("title", ""), 24, Ui.INK, Ui.serif_b))
+	var line := ColorRect.new()
+	line.color = Color(Ui.INK, 0.35)
+	line.custom_minimum_size = Vector2(0, 2)
+	v.add_child(line)
+	var body := Ui.vbox(4)
+	for o in TERMS.get("owner", []):
+		body.add_child(Ui.label(o, 15, Ui.INK, Ui.sans_b))
+	body.add_child(Ui.gap(4))
+	var intro := Ui.label(TERMS.get("intro", "").replace("[동의함]", "[동의하고 시작]") if agree_cb.is_valid() else TERMS.get("intro", ""), 15, Ui.INK, Ui.sans, true)
+	intro.custom_minimum_size = Vector2(600, 0)
+	body.add_child(intro)
+	var secs: Array = TERMS.get("sections", [])
+	for i in secs.size():
+		body.add_child(Ui.gap(8))
+		body.add_child(Ui.label("%d. %s" % [i + 1, secs[i].h], 17, Ui.INK, Ui.serif_b))
+		for it in secs[i].get("items", []):
+			var r := Ui.hbox(8)
+			var dot := Ui.label("·", 15, Ui.INK_DIM, Ui.sans_b)
+			dot.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+			r.add_child(dot)
+			var t := Ui.label(it, 14, Ui.INK, Ui.sans, true)
+			t.custom_minimum_size = Vector2(580, 0)
+			r.add_child(t)
+			body.add_child(r)
+	body.add_child(Ui.gap(8))
+	body.add_child(Ui.label("적용일: %s" % TERMS.get("version", ""), 13, Ui.INK_DIM, Ui.sans))
+	var sc := ScrollContainer.new()
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	sc.custom_minimum_size = Vector2(630, min(get_viewport().get_visible_rect().size.y * 0.6, 540.0))
+	sc.add_child(body)
+	v.add_child(sc)
+	if agree_cb.is_valid():
+		v.add_child(_buttons_row([["동의하지 않음", func():
+			if OS.has_feature("web"):
+				toast("동의해야 게임을 할 수 있습니다.")
+			else:
+				get_tree().quit()], ["동의하고 시작", func():
+			save.terms_ok = str(TERMS.get("version", ""))
+			write_save()
+			close_modal()
+			agree_cb.call(), 22]]))
+	else:
+		v.add_child(_buttons_row([["닫기", func(): close_modal()]]))
+	p.add_child(v)
+	open_modal(p)
+
+
 # ───────────────────────────── 모달
 func open_modal(content: Control, on_close: Callable = Callable()) -> void:
 	for c in modal_center.get_children():
@@ -1108,9 +1185,9 @@ func open_help() -> void:
 	grid.columns = 2
 	grid.add_theme_constant_override("h_separation", 30)
 	grid.add_theme_constant_override("v_separation", 7)
-	var keys := [["1단계 · 현장 정리", ""], ["W A S D / 마우스", "이동 / 둘러보기"], ["1 · 2 · 3, 휠", "손 · 소독 분무기 · 스크러버"], ["왼쪽 버튼 누르고 있기", "도구 사용. 소독약을 먼저 뿌려야 잘 닦인다"], ["E / Q / X", "집어 보기 · 보관 / 폐기 / 내려놓기"], ["F", "손전등"], ["I / Tab", "보관함 열기 · 잘못 넣은 물건 다시 꺼내기"], ["", ""], ["2단계 · 유품 조사", ""], ["끌기 / 휠", "돌려 보기 / 확대"], ["클릭", "수상한 곳 조사"], ["U / H / R", "UV 라이트 / 단서 위치 / 정면"], ["", ""], ["3단계 · 사건 재구성", ""], ["쪽지 · 보기 선택", "답과 근거 단서(최대 2장)를 고른다"], ["", ""], ["Esc / F11", "멈춤 / 전체 화면"]]
+	var keys := [["1단계 · 현장 정리", ""], ["W A S D / 마우스", "이동 / 둘러보기"], ["1 · 2 · 3, 휠", "손 · 소독 분무기 · 스크러버"], ["왼쪽 버튼 누르고 있기", "도구 사용. 소독약을 먼저 뿌려야 잘 닦인다"], ["E / Q / X", "집어 보기 · 보관 / 폐기 / 내려놓기"], ["F", "손전등"], ["I / Tab", "보관함 열기 · 잘못 넣은 물건 다시 꺼내기"], ["C" if OS.has_feature("web") else "Ctrl", "누르고 있는 동안 숙이기 (낮은 곳 얼룩 · 물건)"], ["", ""], ["2단계 · 유품 조사", ""], ["끌기 / 휠", "돌려 보기 / 확대"], ["클릭", "수상한 곳 조사"], ["U / H / R", "UV 라이트 / 단서 위치 / 정면"], ["", ""], ["3단계 · 사건 재구성", ""], ["쪽지 · 보기 선택", "답과 근거 단서(최대 2장)를 고른다"], ["", ""], ["Esc / F11", "멈춤 / 전체 화면"]]
 	if touch:
-		keys = [["1단계 · 현장 정리", ""], ["왼쪽 / 오른쪽 화면 끌기", "이동 / 둘러보기"], ["손 · 분무기 · 스크러버", "도구 바꾸기"], ["집기 · 뿌리기 · 문지르기", "누르고 있으면 도구 사용. 소독약을 먼저 뿌려야 잘 닦인다"], ["보관 / 폐기 / 내려놓기", "들고 있는 물건 분류"], ["손전등 · 멈춤", "오른쪽 · 왼쪽 위 버튼"], ["보관함", "넣은 물건 보기 · 다시 꺼내기 (왼쪽 위)"], ["", ""], ["2단계 · 유품 조사", ""], ["끌기 / 두 손가락", "돌려 보기 / 확대"], ["누르기", "수상한 곳 조사"], ["UV · 단서 위치 · 정면", "화면 아래 버튼"], ["", ""], ["3단계 · 사건 재구성", ""], ["쪽지 · 보기 선택", "답과 근거 단서(최대 2장)를 고른다"]]
+		keys = [["1단계 · 현장 정리", ""], ["왼쪽 / 오른쪽 화면 끌기", "이동 / 둘러보기"], ["손 · 분무기 · 스크러버", "도구 바꾸기"], ["집기 · 뿌리기 · 문지르기", "누르고 있으면 도구 사용. 소독약을 먼저 뿌려야 잘 닦인다"], ["보관 / 폐기 / 내려놓기", "들고 있는 물건 분류"], ["손전등 · 멈춤", "오른쪽 · 왼쪽 위 버튼"], ["보관함", "넣은 물건 보기 · 다시 꺼내기 (왼쪽 위)"], ["숙이기", "눌러서 숙이기 · 일어서기 (왼쪽)"], ["", ""], ["2단계 · 유품 조사", ""], ["끌기 / 두 손가락", "돌려 보기 / 확대"], ["누르기", "수상한 곳 조사"], ["UV · 단서 위치 · 정면", "화면 아래 버튼"], ["", ""], ["3단계 · 사건 재구성", ""], ["쪽지 · 보기 선택", "답과 근거 단서(최대 2장)를 고른다"]]
 	for kv in keys:
 		var head: bool = kv[1] == "" and kv[0] != ""
 		grid.add_child(Ui.label(kv[0], 17 if head else 16, Ui.ACCENT if head else Color("e6e1d8"), Ui.serif_b if head else Ui.sans_b))
@@ -1160,6 +1237,16 @@ func open_settings() -> void:
 	ub.pressed.connect(func(): check_update(true))
 	ur.add_child(ub)
 	body.add_child(ur)
+	_set_head(body, "이용 안내")
+	var tr := Ui.hbox(16)
+	var tl := Ui.label("이용 안내 및 약관 (%s)" % TERMS.get("version", ""), 16, Color("cfc9bf"), Ui.sans)
+	tl.custom_minimum_size = Vector2(250, 0)
+	tl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	tr.add_child(tl)
+	var tb := _seg_button("읽어 보기", false)
+	tb.pressed.connect(func(): open_terms())
+	tr.add_child(tb)
+	body.add_child(tr)
 	var sc := ScrollContainer.new()
 	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	sc.custom_minimum_size = Vector2(700, min(get_viewport().get_visible_rect().size.y * 0.7, 640.0))
@@ -1381,7 +1468,7 @@ func _show_update(d: Dictionary) -> void:
 		"web": "새 버전으로 다시 불러온다. 기록은 그대로 남는다.",
 		"page": "내려받기 페이지에서 새 버전을 받는다."}
 	v.add_child(Ui.gap(4))
-	var hl := Ui.label(how[key], 15, Ui.INK_DIM, Ui.sans, true)
+	var hl := Ui.label(how[key] + (" 업데이트하면 새 버전의 이용 안내에 동의한 것으로 봅니다(설정 → 이용 안내)." if key == "windows" else ""), 15, Ui.INK_DIM, Ui.sans, true)
 	hl.custom_minimum_size = Vector2(560, 0)
 	v.add_child(hl)
 	var label: String = {"windows": "지금 업데이트", "android": "새 APK 받기", "mac": "내려받기 페이지 열기", "web": "새로 불러오기", "page": "내려받기 페이지 열기"}[key]

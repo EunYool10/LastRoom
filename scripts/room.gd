@@ -54,6 +54,9 @@ var hud: CanvasLayer
 var H_ := {}
 var tmove := Vector2.ZERO
 var touchpad: Control
+var stain_aim = null
+var crouch := 0.0
+var crouch_toggle := false
 
 
 func setup(e: Dictionary, state: Dictionary, is_preview := false) -> void:
@@ -478,6 +481,7 @@ func _build_hud() -> void:
 		H_.tools.append(l)
 	var inv := Ui.shadow(Ui.label("I  보관함", 16, Color(1, 1, 1, 0.38), Ui.sans_b), 3)
 	tb.add_child(inv)
+	tb.add_child(Ui.shadow(Ui.label("C  숙이기" if OS.has_feature("web") else "Ctrl  숙이기", 16, Color(1, 1, 1, 0.38), Ui.sans_b), 3))
 	tb.visible = not Game.touch
 	root.add_child(tb)
 	var fl := Ui.shadow(Ui.label("", 14, Ui.DIM, Ui.sans), 3)
@@ -561,7 +565,17 @@ func _update_prompt() -> void:
 	var n := ""
 	var h := ""
 	var live := false
-	if card == null and aim != null:
+	if card == null and stain_aim != null and (tool != 1 or aim == null or aim.type == "stain" or aim.type == "solid"):
+		var st: Stain = stain_aim.obj
+		n = st.def.name
+		var how := "분무기  ·  스크러버" if Game.touch else "2 분무기  ·  3 스크러버"
+		if tool == 2:
+			how = ("뿌리기 버튼을 누르고 있기" if Game.touch else "클릭 유지: 소독약 분사") if stain_aim.dist < 3.0 else "조금 더 가까이"
+		elif tool == 3:
+			how = ("문지르기 버튼을 누르고 있기" if Game.touch else "클릭 유지 + 마우스로 문지르기") if stain_aim.dist < 2.3 else "조금 더 가까이"
+		h = "오염도 %d%%   ·   %s" % [int((1.0 - max(0.0, st.progress)) * 100), how]
+		live = true
+	elif card == null and aim != null:
 		match aim.type:
 			"item":
 				if aim.dist < 2.4:
@@ -931,7 +945,9 @@ func _physics_process(dt: float) -> void:
 	player.rotation.y = yaw
 	head.rotation.x = pitch
 	var b := player.global_transform.basis
-	var target := (-b.z * inp.y + b.x * inp.x) * 1.7
+	var want_crouch := crouch_toggle or Input.is_physical_key_pressed(KEY_C) or (not OS.has_feature("web") and Input.is_physical_key_pressed(KEY_CTRL))
+	crouch = move_toward(crouch, 1.0 if want_crouch else 0.0, dt * 5.0)
+	var target := (-b.z * inp.y + b.x * inp.x) * 1.7 * (1.0 - 0.45 * crouch)
 	target.y = 0
 	player.velocity = player.velocity.lerp(target, min(1.0, dt * 10.0))
 	player.move_and_slide()
@@ -943,7 +959,8 @@ func _physics_process(dt: float) -> void:
 		if step_t > 0.85:
 			step_t = 0.0
 			Sfx.step()
-	head.position.y = eye + sin(bob * 2.0) * 0.018 * min(1.0, moving) * (1.0 if Game.settings.get("bob", true) else 0.0)
+	var low: float = lerp(eye, max(0.85, eye - 0.62), crouch)
+	head.position.y = low + sin(bob * 2.0) * 0.018 * min(1.0, moving) * (1.0 if Game.settings.get("bob", true) else 0.0)
 	if card != null and card.liftable:
 		var tgt: Vector3 = cam.global_transform * Vector3(0, -0.05, -0.5)
 		card.root.global_position = card.root.global_position.lerp(tgt, min(1.0, dt * 12.0))
@@ -955,16 +972,16 @@ func _physics_process(dt: float) -> void:
 	if using and card == null:
 		if tool == 2:
 			spray_on = 0.25
-			if aim != null and aim.type == "stain" and aim.dist < 2.9 and not aim.obj.done:
-				var st: Stain = aim.obj
-				st.spray(st.uv_of(aim.pos), 0.08 + 0.06 * aim.dist, dt)
+			if stain_aim != null and stain_aim.dist < 3.0:
+				var st: Stain = stain_aim.obj
+				st.spray(st.uv_of(stain_aim.pos), 0.09 + 0.06 * stain_aim.dist, dt)
 				if st.update_progress():
 					_stain_done(st)
 		elif tool == 3:
-			if aim != null and aim.type == "stain" and aim.dist < 2.2 and not aim.obj.done:
-				var st: Stain = aim.obj
+			if stain_aim != null and stain_aim.dist < 2.3:
+				var st: Stain = stain_aim.obj
 				var motion: float = min(1.0, scrub_motion / (dt * 900.0 + 1.0))
-				var f := st.scrub(st.uv_of(aim.pos), dt, motion)
+				var f := st.scrub(st.uv_of(stain_aim.pos), dt, motion)
 				if st.update_progress():
 					_stain_done(st)
 				scrub_on = 0.2 + motion * 0.25
@@ -1006,6 +1023,7 @@ func _raycast() -> void:
 	var q := PhysicsRayQueryParameters3D.create(from, to, RAY_MASK)
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)
 	aim = null
+	_stain_target()
 	if hit.is_empty():
 		return
 	var col: Object = hit.collider
@@ -1017,6 +1035,32 @@ func _raycast() -> void:
 			aim = null
 	else:
 		aim = {"type": "solid", "obj": null, "dist": dist, "pos": hit.position}
+
+
+## 분무기 · 스크러버가 닿는 얼룩. 물건은 통과하고 벽 · 가구에서는 멈춘다.
+## 얼룩 판 위나 가장자리에서 9cm 안쪽을 겨누면 그 얼룩으로 본다.
+func _stain_target() -> void:
+	stain_aim = null
+	var from := cam.global_position
+	var q := PhysicsRayQueryParameters3D.create(from, from - cam.global_transform.basis.z * 3.2, L_SOLID | L_STAIN)
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	if hit.is_empty():
+		return
+	var pos: Vector3 = hit.position
+	var best = null
+	var best_d := 1e9
+	for st in stains:
+		if st.dead or st.done:
+			continue
+		var l: Vector3 = st.node.to_local(pos)
+		if abs(l.y) > 0.05 or abs(l.x) > st.w * 0.5 + 0.09 or abs(l.z) > st.h * 0.5 + 0.09:
+			continue
+		var d2: float = Vector2(max(0.0, abs(l.x) - st.w * 0.5), max(0.0, abs(l.z) - st.h * 0.5)).length() + abs(l.y)
+		if d2 < best_d:
+			best_d = d2
+			best = st
+	if best != null:
+		stain_aim = {"obj": best, "pos": pos, "dist": from.distance_to(pos)}
 
 
 func _update_flies(dt: float) -> void:
