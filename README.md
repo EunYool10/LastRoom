@@ -19,9 +19,14 @@
 ## 플레이 방법 (Windows)
 
 1. [Releases](../../releases/latest)에서 `LastRoom-windows.zip`을 내려받습니다.
-2. 압축을 풀고 `LastRoom` 폴더 안의 `LastRoom.exe`를 실행합니다.
+2. 압축을 풀고 `LastRoom` 폴더 안의 `LastRoom.exe`를 실행합니다. 설치 과정은 없습니다.
 
-설치 과정은 없습니다. Windows가 "PC 보호" 창을 띄우면 **추가 정보 → 실행**을 누르세요.
+### "Windows의 PC 보호" 창이 뜨면
+
+코드 서명이 없는 개인 제작 프로그램이라, 처음 실행할 때 Windows가 확인 창을 띄웁니다.
+
+1. 창에서 **추가 정보**를 누릅니다.
+2. 아래에 나타나는 **실행** 버튼을 누릅니다.
 
 ## 조작법
 
