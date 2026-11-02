@@ -181,17 +181,22 @@ func _model(d: Dictionary) -> Dictionary:
 		ring.scale = Vector3(1, 0.05, 1)
 		ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		body.add_child(ring)
-		var sp := {"name": name, "def": defs[name], "item": d, "ring": rmat, "body": body, "n": n}
+		var sp := {"name": name, "def": defs[name], "item": d, "ring": rmat, "body": body, "n": n, "cs": cs}
 		body.set_meta("spot", sp)
 		spots.append(sp)
 	for u in res.get("uv", []):
 		u.visible = uv
 	var m := {"res": res, "holder": holder, "spots": spots, "dim": mdim, "half": a.size.y / 2.0}
 	models[d.id] = m
-	if S.opened.has(d.id):
+	if S.opened.get(d.id, false) == true:
 		_apply_opened(m, true)
 	holder.visible = false
 	return m
+
+
+func _spots_on(m: Dictionary, on: bool) -> void:
+	for sp in m.spots:
+		sp.cs.disabled = not on
 
 
 func _aabb(root: Node3D) -> AABB:
@@ -221,6 +226,13 @@ func _apply_opened(m: Dictionary, instant: bool) -> void:
 		var fl := dr.find_child("fbLetter", true, false)
 		if fl:
 			fl.visible = true
+	if res.has("unwrap"):
+		res.unwrap.hide.visible = false
+		res.unwrap.show.visible = true
+	if res.has("screen_mat"):
+		var lit: Texture2D = Build.tex(res.lit_tex)
+		res.screen_mat.albedo_texture = lit
+		res.screen_mat.emission_texture = lit
 
 
 func select(id: String) -> void:
@@ -232,8 +244,10 @@ func select(id: String) -> void:
 		return
 	if cur != null:
 		cur.m.holder.visible = false
+		_spots_on(cur.m, false)
 	var m := _model(d)
 	m.holder.visible = true
+	_spots_on(m, true)
 	cur = {"def": d, "m": m}
 	pivot.basis = Basis()
 	vel = Vector2.ZERO
@@ -252,6 +266,8 @@ func _spot_clues(sd: Dictionary) -> Array:
 		return [sd.clue]
 	if sd.has("read") and ep.docs.has(sd.read) and ep.docs[sd.read].has("clue"):
 		return [ep.docs[sd.read].clue]
+	if sd.get("action", "") == "unwrap" and ep.has("unwrap") and ep.unwrap.has("clue"):
+		return [ep.unwrap.clue]
 	if sd.get("action", "") == "phone":
 		var out := []
 		for a in ep.phone.apps:
@@ -373,6 +389,20 @@ func _activate(sp: Dictionary) -> void:
 	elif sd.has("read"):
 		Game.open_doc(sd.read)
 	elif sd.get("action", "") == "phone":
+		if ep.phone.get("charge", false) and S.opened.get(item.id, false) != true:
+			if S.opened.get(item.id, false) is String:
+				Game.note(item.name, "충전 중이다. 화면이 켜지기를 기다린다.")
+				return
+			S.opened[item.id] = "charging"
+			Game.note(item.name, "배터리가 0%다. 작업실 충전기에 꽂아 두었다.")
+			Sfx.play("click", 0.6)
+			var cm: Dictionary = cur.m
+			get_tree().create_timer(3.5).timeout.connect(func():
+				S.opened[item.id] = true
+				_apply_opened(cm, true)
+				Sfx.play("unlock", 0.6)
+				Game.note(item.name, "화면이 켜졌다. 잠금은 걸려 있지 않다."))
+			return
 		Game.open_phone()
 	elif sd.get("action", "") == "combo":
 		if S.opened.has(item.id):
@@ -389,6 +419,22 @@ func _activate(sp: Dictionary) -> void:
 			get_tree().create_timer(0.7).timeout.connect(func():
 				Game.note(item.name, ep.combo.msg)
 				refresh()))
+		return
+	elif sd.get("action", "") == "unwrap":
+		if S.opened.has(item.id):
+			Game.note(item.name, "포장은 이미 풀었다.")
+			return
+		S.opened[item.id] = true
+		_apply_opened(cur.m, false)
+		Sfx.play("paper", 0.8)
+		for rid in ep.unwrap.reveal:
+			if not S.kept.has(rid):
+				S.kept.append(rid)
+		if ep.unwrap.has("clue"):
+			Game.add_clue(ep.unwrap.clue)
+		get_tree().create_timer(0.6).timeout.connect(func():
+			Game.note(item.name, ep.unwrap.msg)
+			refresh())
 		return
 	elif sd.get("action", "") == "false":
 		if S.opened.has(item.id):

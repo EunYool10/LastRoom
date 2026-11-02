@@ -494,7 +494,9 @@ func _build_hud() -> void:
 	line.color = Color(Ui.INK, 0.25)
 	line.custom_minimum_size = Vector2(0, 1)
 	cv.add_child(line)
-	cv.add_child(Ui.label("E  보관함에 넣기      Q  폐기      X  내려놓기", 16, Ui.INK, Ui.sans_b))
+	cv.add_child(Ui.label("왼쪽 클릭 · E     보관함에 넣기", 16, Ui.INK, Ui.sans_b))
+	cv.add_child(Ui.label("Q     폐기", 16, Ui.INK, Ui.sans_b))
+	cv.add_child(Ui.label("오른쪽 클릭 · X     내려놓기", 16, Ui.INK, Ui.sans_b))
 	var cm := Ui.label("", 15, Ui.RED, Ui.sans, true)
 	cm.custom_minimum_size = Vector2(326, 0)
 	cv.add_child(cm)
@@ -596,6 +598,9 @@ func _unhandled_input(event: InputEvent) -> void:
 				Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 				return
 			set_use(event.pressed)
+		elif event.pressed and event.button_index == MOUSE_BUTTON_RIGHT:
+			if card != null:
+				card_action("cancel")
 		elif event.pressed and event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			select_tool(tool % 3 + 1)
 		elif event.pressed and event.button_index == MOUSE_BUTTON_WHEEL_UP:
@@ -614,7 +619,10 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func set_use(v: bool) -> void:
-	if v and card != null:
+	if card != null:
+		if v:
+			card_action("keep")
+		using = false
 		return
 	if v and tool == 1:
 		interact()
@@ -841,7 +849,7 @@ func _physics_process(dt: float) -> void:
 	t += dt
 	S.t1 += dt
 	var inp := Vector2.ZERO
-	if card == null:
+	if true:
 		if Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_UP):
 			inp.y += 1
 		if Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_DOWN):

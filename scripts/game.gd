@@ -62,7 +62,12 @@ func _ready() -> void:
 		for a in args:
 			if a.begins_with("--ep="):
 				ei = int(a.substr(5))
-		at.run(test, ei, not args.has("--quick"))
+		if args.has("--pausetest"):
+			at.pause_test(test, ei)
+		elif args.has("--inputtest"):
+			at.input_test(test, ei)
+		else:
+			at.run(test, ei, not args.has("--quick"))
 
 
 func _load_data() -> void:
@@ -248,7 +253,7 @@ func show_title() -> void:
 	for i in EPISODES.size():
 		col.add_child(_ep_row(i))
 	col.add_child(Ui.gap(30))
-	for m in [["설정", open_settings], ["조작법", open_help], ["기록 지우기", _reset_save], ["끝내기", func(): get_tree().quit()]]:
+	for m in [["설정", open_settings], ["조작법", open_help], ["기록 지우기", _reset_save], ["만든 사람들", func(): fade(show_credits)], ["끝내기", func(): get_tree().quit()]]:
 		var b := Ui.button(m[0], 20, m[1], Ui.serif, Color("b9b1a4"))
 		b.custom_minimum_size = Vector2(160, 0)
 		col.add_child(b)
@@ -369,6 +374,54 @@ func enter_room() -> void:
 		show_pause(true))
 
 
+const BLUR_SHADER := "shader_type canvas_item;\nuniform sampler2D screen_tex : hint_screen_texture, filter_linear_mipmap;\nuniform float lod = 3.2;\nuniform float dim = 0.26;\nvoid fragment() {\n\tvec3 c = textureLod(screen_tex, SCREEN_UV, lod).rgb;\n\tfloat g = dot(c, vec3(0.299, 0.587, 0.114));\n\tc = mix(vec3(g), c, 0.5) * dim;\n\tCOLOR = vec4(c, 1.0);\n}"
+
+
+## 멈춤 화면에서는 방 HUD · 자막 · 쪽지를 숨긴다
+func _room_overlays(show: bool) -> void:
+	if world and stage == "room" and world.get("hud"):
+		world.hud.visible = show
+	say_panel.visible = show
+	note_panel.visible = show
+	toast_box.visible = show
+
+
+func _keycap(text: String) -> Control:
+	var p := PanelContainer.new()
+	var s := StyleBoxFlat.new()
+	s.bg_color = Color(1, 1, 1, 0.06)
+	s.border_color = Color(1, 1, 1, 0.3)
+	s.set_border_width_all(1)
+	s.border_width_bottom = 2
+	s.set_corner_radius_all(4)
+	s.content_margin_left = 9
+	s.content_margin_right = 9
+	s.content_margin_top = 3
+	s.content_margin_bottom = 4
+	p.add_theme_stylebox_override("panel", s)
+	p.add_child(Ui.label(text, 14, Color("efe9df"), Ui.sans_b))
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return p
+
+
+## 왼쪽에 표식이 붙는 메뉴 항목 (타이틀과 같은 방식)
+func _menu_item(text: String, size: int, cb: Callable, primary: bool) -> Control:
+	var row := Ui.hbox(0)
+	var b := Ui.button(text, size, cb, Ui.serif_b if primary else Ui.serif, Color("efe9df") if primary else Color("b9b1a4"))
+	var mark := Ui.label("—", size, Ui.ACCENT, Ui.serif)
+	mark.modulate.a = 0.0
+	mark.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	mark.anchor_top = 0
+	mark.anchor_bottom = 1
+	mark.offset_left = -size * 1.6
+	mark.offset_right = -8
+	b.add_child(mark)
+	b.mouse_entered.connect(func(): mark.modulate.a = 1.0)
+	b.mouse_exited.connect(func(): mark.modulate.a = 0.0)
+	row.add_child(b)
+	return row
+
+
 func show_pause(first := false) -> void:
 	paused = true
 	get_tree().paused = true
@@ -376,35 +429,66 @@ func show_pause(first := false) -> void:
 	Sfx.stop_loops()
 	if world and world.has_method("release"):
 		world.release()
+	_room_overlays(false)
 	Ui.clear(pause_root)
-	var dim := ColorRect.new()
-	dim.color = Color(0, 0, 0, 0.72)
-	Ui.full(dim)
-	pause_root.add_child(dim)
-	var v := Ui.vbox(10)
-	Ui.pin(v, 0, 0.5, 120, 0, 1, 0)
-	v.add_child(Ui.label(("%d장 · %s" % [int(ep.no), ep.place]) if first else "잠시 멈춤", 44, Color("efe9df"), Ui.serif_b))
-	v.add_child(Ui.label("방독 마스크를 쓰고, 문을 연다." if first else "숨을 고른다.", 19, Color("a39b8e"), Ui.serif))
-	v.add_child(Ui.gap(22))
-	var keys := GridContainer.new()
-	keys.columns = 2
-	keys.add_theme_constant_override("h_separation", 26)
-	keys.add_theme_constant_override("v_separation", 6)
-	for kv in [["W A S D", "이동"], ["마우스", "둘러보기"], ["1  2  3", "손 · 소독 분무기 · 스크러버"], ["왼쪽 버튼 누르고 있기", "도구 사용 (스크러버는 마우스를 움직여 문지르기)"], ["E", "집어 보기 · 조사 / 보관함에 넣기"], ["Q", "폐기"], ["F", "손전등"], ["Esc", "멈춤"]]:
-		keys.add_child(Ui.label(kv[0], 16, Ui.ACCENT, Ui.sans_b))
-		keys.add_child(Ui.label(kv[1], 16, Color("cfc9bf"), Ui.sans))
-	v.add_child(keys)
-	v.add_child(Ui.gap(26))
-	v.add_child(Ui.button("작업 시작" if first else "계속하기", 26, hide_pause, Ui.serif_b))
+	var bg := ColorRect.new()
+	Ui.full(bg)
+	var sh := Shader.new()
+	sh.code = BLUR_SHADER
+	var sm := ShaderMaterial.new()
+	sm.shader = sh
+	bg.material = sm
+	pause_root.add_child(bg)
+	# 왼쪽: 제목 · 진행 · 메뉴
+	var left := Ui.vbox(6)
+	Ui.pin(left, 0, 0.5, 130, 0, 1, 0)
+	left.add_child(Ui.label("%d장 · %s" % [int(ep.no), ep.place], 15, Ui.ACCENT, Ui.spaced))
+	left.add_child(Ui.label("현장 진입" if first else "잠시 멈춤", 58, Color("efe9df"), Ui.serif_b))
+	if first:
+		left.add_child(Ui.label("방독 마스크를 쓰고, 문을 연다.", 19, Color("a39b8e"), Ui.serif))
+		left.add_child(Ui.gap(18))
+		var goal := Ui.label("얼룩에 소독약을 뿌리고 문질러 닦아 낸다.\n물건마다 유족에게 남길지, 버릴지 정한다.\n다 끝나면 현관으로 나간다.", 17, Color("cfc9bf"), Ui.sans, true)
+		goal.custom_minimum_size = Vector2(520, 0)
+		goal.add_theme_constant_override("line_spacing", 6)
+		left.add_child(goal)
+	elif world and world.has_method("_counts"):
+		var c: Dictionary = world._counts()
+		left.add_child(Ui.label("오염 제거 %d / %d     유품 분류 %d / %d     단서 %d" % [c.sdone, c.stotal, c.sorted, c.total, S.clues.size()], 17, Color("a39b8e"), Ui.sans))
+	left.add_child(Ui.gap(40))
+	left.add_child(_menu_item("작업 시작" if first else "계속하기", 32, hide_pause, true))
+	left.add_child(Ui.gap(4))
 	if not first:
-		v.add_child(Ui.button("설정", 20, open_settings, Ui.serif, Color("b9b1a4")))
-	v.add_child(Ui.button("장 선택으로", 20, quit_to_title, Ui.serif, Color("b9b1a4")))
-	pause_root.add_child(v)
+		left.add_child(_menu_item("설정", 22, open_settings, false))
+	left.add_child(_menu_item("장 선택으로", 22, quit_to_title, false))
+	pause_root.add_child(left)
+	# 오른쪽: 조작 안내 카드
+	var card := Ui.panel(Ui.dark_box(0.5, 30, 0.1))
+	Ui.pin(card, 1, 0.5, -130, 0, -1, 0)
+	var cv := Ui.vbox(13)
+	cv.add_child(Ui.label("조작", 15, Ui.ACCENT, Ui.spaced))
+	cv.add_child(Ui.gap(2))
+	for row in [[["W", "A", "S", "D"], "이동"], [["마우스"], "둘러보기"], [["1", "2", "3"], "손 · 소독 분무기 · 스크러버"], [["왼쪽 클릭 유지"], "도구 사용 · 스크러버는 누른 채 문지르기"], [["E"], "집어 보기 · 조사 · 보관함에 넣기"], [["Q"], "폐기"], [["X", "오른쪽 클릭"], "내려놓기"], [["F"], "손전등"]]:
+		var r := Ui.hbox(16)
+		var caps := Ui.hbox(4)
+		caps.custom_minimum_size = Vector2(196, 0)
+		for k in row[0]:
+			caps.add_child(_keycap(k))
+		r.add_child(caps)
+		var l := Ui.label(row[1], 16, Color("d8d2c8"), Ui.sans)
+		l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		r.add_child(l)
+		cv.add_child(r)
+	card.add_child(cv)
+	pause_root.add_child(card)
+	var hint := Ui.label("Esc   " + ("작업 시작" if first else "계속하기"), 14, Color(1, 1, 1, 0.38), Ui.sans)
+	Ui.pin(hint, 0, 1, 130, -44, 1, -1)
+	pause_root.add_child(hint)
 	pause_root.visible = true
 
 
 func hide_pause() -> void:
 	pause_root.visible = false
+	_room_overlays(true)
 	_unpause()
 	if stage == "room":
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -566,8 +650,8 @@ func _after_result() -> void:
 	for E in EPISODES:
 		if not save.done.has(E.id):
 			all_done = false
-	if all_done and not save.get("seen_final", false):
-		save.seen_final = true
+	if all_done and not save.get("seen_final5", false):
+		save.seen_final5 = true
 		write_save()
 		fade(_show_final)
 		return
@@ -603,7 +687,7 @@ func _show_final() -> void:
 		l.modulate.a = 0.0
 		v.add_child(l)
 		labels.append(l)
-	var b := Ui.button("처음으로", 22, func(): fade(show_title), Ui.serif_b)
+	var b := Ui.button("만든 사람들  ▸", 22, func(): fade(show_credits), Ui.serif_b)
 	b.alignment = HORIZONTAL_ALIGNMENT_CENTER
 	b.modulate.a = 0.0
 	v.add_child(b)
@@ -647,6 +731,9 @@ func _clear_texts() -> void:
 	say_panel.modulate.a = 0.0
 	note_timer = 0.0
 	note_panel.modulate.a = 0.0
+	say_panel.visible = true
+	note_panel.visible = true
+	toast_box.visible = true
 
 
 func add_clue(id: String) -> void:
@@ -706,6 +793,63 @@ func _input(event: InputEvent) -> void:
 			elif stage == "inspect" or stage == "board":
 				quit_to_title()
 				get_viewport().set_input_as_handled()
+			elif stage == "credits":
+				fade(show_title)
+				get_viewport().set_input_as_handled()
+
+
+# ───────────────────────────── 만든 사람들
+func show_credits() -> void:
+	stage = "credits"
+	_set_world(null)
+	var root := _new_screen()
+	var bg := ColorRect.new()
+	bg.color = Color.BLACK
+	Ui.full(bg)
+	root.add_child(bg)
+	var v := Ui.vbox(10)
+	v.custom_minimum_size = Vector2(760, 0)
+	v.alignment = BoxContainer.ALIGNMENT_CENTER
+	var add_line := func(text: String, size: int, color: Color, font: Font, gap_before: int):
+		if gap_before > 0:
+			v.add_child(Ui.gap(gap_before))
+		var l := Ui.label(text, size, color, font, true)
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		l.custom_minimum_size = Vector2(760, 0)
+		v.add_child(l)
+	var head := Color("c9a463")
+	var body := Color("e6e1d8")
+	var dim := Color("8f897f")
+	add_line.call("마지막 방", 64, Color("efe9df"), Ui.serif_b, 0)
+	add_line.call("특수청소부의 기록", 20, dim, Ui.serif, 0)
+	add_line.call("기획 · 개발", 16, head, Ui.spaced, 90)
+	add_line.call("김은율", 30, body, Ui.serif_b, 0)
+	add_line.call("이야기", 16, head, Ui.spaced, 70)
+	for E in EPISODES:
+		add_line.call("%d장  %s — %s" % [int(E.no), E.title, E.place], 20, body, Ui.serif, 0)
+	add_line.call("글꼴", 16, head, Ui.spaced, 70)
+	add_line.call("나눔고딕 · 나눔명조 · 나눔손글씨 펜", 20, body, Ui.serif, 0)
+	add_line.call("NAVER · SIL Open Font License 1.1", 15, dim, Ui.sans, 0)
+	add_line.call("엔진", 16, head, Ui.spaced, 60)
+	add_line.call("Godot Engine · MIT License", 20, body, Ui.serif, 0)
+	add_line.call("이 게임에 나오는 인물과 사건은 모두 지어낸 이야기이며, 실제 인물이나 단체와 관계가 없습니다.", 16, dim, Ui.sans, 90)
+	add_line.call("마음이 힘들 때는 혼자 견디지 마세요.", 16, dim, Ui.sans, 30)
+	add_line.call("자살예방상담 109  ·  청소년상담 1388  ·  정신건강상담 1577-0199", 16, dim, Ui.sans, 0)
+	add_line.call("플레이해 주셔서 고맙습니다.", 26, body, Ui.serif_b, 120)
+	root.add_child(v)
+	var vh := get_viewport().get_visible_rect().size
+	v.position = Vector2((vh.x - 760.0) / 2.0, vh.y + 20.0)
+	await get_tree().process_frame
+	var total: float = v.size.y + vh.y + 40.0
+	var tw := create_tween()
+	tw.tween_property(v, "position:y", vh.y / 2.0 - v.size.y + 40.0, total / 55.0)
+	tw.tween_interval(2.5)
+	tw.tween_callback(func():
+		if stage == "credits":
+			fade(show_title))
+	var skip := Ui.button("건너뛰기  Esc", 16, func(): fade(show_title), Ui.sans, Color(1, 1, 1, 0.45))
+	Ui.pin(skip, 1, 1, -30, -26, -1, -1)
+	root.add_child(skip)
 
 
 # ───────────────────────────── 모달
@@ -858,7 +1002,13 @@ func open_doc(id: String) -> void:
 # ───────────────────────────── 휴대폰
 func open_phone() -> void:
 	var P: Dictionary = ep.phone
-	if P.pattern != null and not S.phone_unlocked:
+	if P.get("pin") != null and not S.phone_unlocked:
+		open_combo(str(P.pin), func():
+			S.phone_unlocked = true
+			Sfx.play("unlock", 0.8)
+			get_tree().create_timer(0.2).timeout.connect(func(): _show_phone(0)), "비밀번호 4자리", "잠금 화면에 네 자리 숫자를 넣는다.")
+		return
+	if P.get("pattern") != null and not S.phone_unlocked:
 		open_pattern(P.pattern, func():
 			S.phone_unlocked = true
 			Sfx.play("unlock", 0.8)
@@ -874,13 +1024,14 @@ func _phone_shell(P: Dictionary, ai: int) -> Array:
 	sb.bg_color = Color("101a14") if flip else Color("0d0f14")
 	sb.border_color = Color("8d9096") if flip else Color("1d1f25")
 	sb.set_border_width_all(10)
-	sb.set_corner_radius_all(18 if flip else 34)
+	var lap: bool = P.skin == "laptop"
+	sb.set_corner_radius_all(18 if flip else (8 if lap else 34))
 	sb.content_margin_left = 16
 	sb.content_margin_right = 16
 	sb.content_margin_top = 18
 	sb.content_margin_bottom = 16
 	outer.add_theme_stylebox_override("panel", sb)
-	outer.custom_minimum_size = Vector2(360, min(640.0, get_viewport().get_visible_rect().size.y * 0.8))
+	outer.custom_minimum_size = Vector2(620, min(460.0, get_viewport().get_visible_rect().size.y * 0.7)) if lap else Vector2(360, min(640.0, get_viewport().get_visible_rect().size.y * 0.8))
 	var v := Ui.vbox(10)
 	var tabs := Ui.hbox(6)
 	for i in P.apps.size():
@@ -1154,18 +1305,18 @@ func open_pattern(sol: Array, ok: Callable) -> void:
 
 
 # ───────────────────────────── 숫자 자물쇠
-func open_combo(code: String, ok: Callable) -> void:
+func open_combo(code: String, ok: Callable, title := "숫자 자물쇠", hint := "네 자리 숫자. 키보드로도 넣을 수 있다.") -> void:
 	var vals := [0, 0, 0, 0]
 	var cursor := [0]
 	var p := Ui.panel(Ui.dark_box(0.98, 34, 0.1))
 	var v := Ui.vbox(14)
-	var t := Ui.label("숫자 자물쇠", 17, Ui.ACCENT, Ui.sans_b)
+	var t := Ui.label(title, 17, Ui.ACCENT, Ui.sans_b)
 	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(t)
 	var wheels := Ui.hbox(14)
 	wheels.alignment = BoxContainer.ALIGNMENT_CENTER
 	var digits := []
-	var msg := Ui.label("네 자리 숫자. 키보드로도 넣을 수 있다.", 15, Ui.DIM, Ui.sans, true)
+	var msg := Ui.label(hint, 15, Ui.DIM, Ui.sans, true)
 	msg.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	var show := func():
 		for i in range(4):

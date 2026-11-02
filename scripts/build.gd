@@ -238,6 +238,14 @@ static func furniture(t: String, p: Dictionary) -> Dictionary:
 		"rail": return _rail(p)
 		"plug": return _plug()
 		"doorlock": return _doorlock()
+		"boilerRoom": return _boiler_room()
+		"suitcase": return _suitcase()
+		"pcDesk": return _pc_desk(p)
+		"gamingChair": return _gaming_chair()
+		"bookshelf": return _bookshelf(p)
+		"aircon": return _aircon()
+		"fan": return _fan()
+		"trays": return _trays()
 	push_warning("unknown furniture " + t)
 	return {"g": node(null)}
 
@@ -436,6 +444,8 @@ static func _window(p: Dictionary) -> Dictionary:
 	var gm := tmat(view, 1.0, {"unshaded": true})
 	gm.albedo_color = col(int(p.get("tint", 0x9aa4b0)))
 	quad(g, w, h, gm, Vector3.ZERO)
+	if p.has("overlay"):
+		quad(g, w, h, tmat(p.overlay, 1.0, {"alpha_tex": true, "unshaded": true}), Vector3(0, 0, 0.03))
 	var fm := mat(int(p.get("frame", 0xd8d6d0)), 0.5)
 	box(g, Vector3(w + 0.06, 0.04, 0.05), fm, Vector3(0, h / 2 + 0.01, 0))
 	box(g, Vector3(w + 0.06, 0.04, 0.05), fm, Vector3(0, -h / 2 - 0.01, 0))
@@ -477,8 +487,10 @@ static func _ring_light() -> Dictionary:
 	var m := mat(0x222226, 0.4, 0.5)
 	for i in range(3):
 		var a := i / 3.0 * TAU
-		var l := cyl(g, 0.008, 0.008, 0.62, m, Vector3(cos(a) * 0.15, 0.28, sin(a) * 0.15), 6)
-		l.rotation = Vector3(sin(a) * 0.5, 0, -cos(a) * 0.5)
+		var pv := node(g, Vector3(0, 0.55, 0))
+		pv.rotation.y = a
+		var l := cyl(pv, 0.008, 0.008, 0.62, m, Vector3(0.14, -0.27, 0), 6)
+		l.rotation.z = 0.5
 	cyl(g, 0.012, 0.012, 1.1, m, Vector3(0, 1.0, 0), 8)
 	var rm := StandardMaterial3D.new()
 	rm.albedo_color = Color.WHITE
@@ -610,7 +622,7 @@ static func item(model: String, p: Dictionary) -> Dictionary:
 		"can": return _can(p)
 		"cup": return _cup(p)
 		"lunchbox": return _lunchbox()
-		"bottle": return _bottle()
+		"bottle": return _bottle(p)
 		"bag": return _bag(p)
 		"paperBall": return _paper_ball(p)
 		"parcel": return _parcel(p)
@@ -622,10 +634,10 @@ static func item(model: String, p: Dictionary) -> Dictionary:
 		"flip": return _flip()
 		"envelope": return flat(null, 0.22, 0.11, 0.004, "env_%s_f" % p.tex, "env_%s_b" % p.tex, 0xe4dbc6)
 		"paper": return flat(null, p.get("w", 0.21), p.get("d", 0.297), 0.0015, p.tex, "paper_back", 0xece6d8)
-		"postit": return flat(null, 0.076, 0.076, 0.001, "postit_f", "postit_b", 0xf2dc6e)
+		"postit": return flat(null, 0.076, 0.076, 0.001, p.get("tex", "postit") + "_f", p.get("tex", "postit") + "_b", 0xf2dc6e)
 		"photo": return flat(null, 0.15, 0.1, 0.0015, "photo_office", "photo_office_back", 0xf4f1ea)
 		"frame": return _frame(p)
-		"calendar": return _calendar()
+		"calendar": return _calendar(p.get("tex", "calendar_e1"))
 		"jbox": return _jbox()
 		"bankbook": return flat(null, 0.09, 0.14, 0.006, "bank_cover", "", 0xe7e2d6)
 		"letter": return flat(null, 0.15, 0.105, 0.003, p.tex + "_f", p.tex + "_b", 0xefe8d8)
@@ -649,6 +661,20 @@ static func item(model: String, p: Dictionary) -> Dictionary:
 		"pouch": return _noanchor(flat(null, 0.09, 0.12, 0.003, "pouch", "", 0xf7f7f3))
 		"cotton": return _cotton()
 		"tub": return _tub(p)
+		"ticket": return flat(null, 0.15, 0.065, 0.001, "ticket_f", "paper_back", 0xf2f0e6)
+		"logbook": return flat(null, 0.15, 0.21, 0.012, p.get("tex", "log") + "_cover", p.get("tex", "log") + "_back", 0xf0ece0)
+		"sketchbook": return flat(null, 0.21, 0.28, 0.015, "sketch_cover", "", 0xe8e2d4)
+		"alarmBox": return _standing_box(0.12, 0.16, 0.05, "alarm_box", 0xf4f4f0)
+		"socksBox": return _standing_box(0.13, 0.18, 0.04, "socks_box", 0xeaf2f6)
+		"laptop": return _laptop()
+		"giftbox": return _giftbox()
+		"dress": return _dress()
+		"figure": return _figure()
+		"uniform": return _uniform()
+		"pipingKit": return _piping_kit()
+		"onigiri": return _onigiri()
+		"breadbag": return _noanchor(flat(null, 0.2, 0.26, 0.04, "breadbag", "", 0xefe3c8))
+		"snack": return _noanchor(flat(null, 0.16, 0.22, 0.03, "snack", "", 0xf2a33a))
 	push_warning("unknown item " + model)
 	return {"g": node(null)}
 
@@ -697,13 +723,13 @@ static func _lunchbox() -> Dictionary:
 	return {"g": g}
 
 
-static func _bottle() -> Dictionary:
+static func _bottle(p: Dictionary) -> Dictionary:
 	var g := node(null)
-	var m := mat(0xcfe6f2, 0.1, 0.0, {"alpha": 0.45})
+	var m := mat(int(p.get("color", 0xcfe6f2)), 0.1, 0.0, {"alpha": float(p.get("alpha", 0.45))})
 	cyl(g, 0.032, 0.032, 0.17, m, Vector3(0, 0.085, 0))
 	cyl(g, 0.012, 0.03, 0.04, m, Vector3(0, 0.19, 0))
-	cyl(g, 0.014, 0.014, 0.018, mat(0x2a6fd6), Vector3(0, 0.219, 0))
-	cyl(g, 0.0325, 0.0325, 0.05, mat(0x2d8ad6), Vector3(0, 0.1, 0))
+	cyl(g, 0.014, 0.014, 0.018, mat(int(p.get("cap", 0x2a6fd6))), Vector3(0, 0.219, 0))
+	cyl(g, 0.0325, 0.0325, 0.05, mat(int(p.get("label", 0x2d8ad6))), Vector3(0, 0.1, 0))
 	return {"g": g, "lie": 0.032}
 
 
@@ -811,9 +837,10 @@ static func _phone(p: Dictionary) -> Dictionary:
 	var d := 0.152
 	var t := 0.009
 	box(g, Vector3(w, t, d), mat(int(p.get("case", 0x22252b)), 0.4), Vector3(0, t / 2, 0))
-	plane_up(g, w * 0.96, d * 0.97, tmat("phone_%s_screen" % k, 0.25, {"emit_tex": true, "emission_energy_multiplier": 0.25}), Vector3(0, t + 0.0004, 0))
+	var sm := tmat("phone_%s_%s" % [k, "dead" if p.get("dead", false) else "screen"], 0.25, {"emit_tex": true, "emission_energy_multiplier": 0.25})
+	plane_up(g, w * 0.96, d * 0.97, sm, Vector3(0, t + 0.0004, 0))
 	plane_down(g, w * 0.99, d * 0.99, tmat("phone_%s_back" % k, 0.4), Vector3(0, -0.0004, 0))
-	var res := {"g": g, "view": Vector3(90, 0, 0), "anchors": {
+	var res := {"g": g, "view": Vector3(90, 0, 0), "screen_mat": sm, "lit_tex": "phone_%s_screen" % k, "anchors": {
 		"screen": {"p": Vector3(0, t, 0), "n": Vector3.UP, "r": 0.03},
 		"back": {"p": Vector3.ZERO, "n": Vector3.DOWN, "r": 0.03}}}
 	if p.get("smudge", false):
@@ -851,13 +878,13 @@ static func _frame(p: Dictionary) -> Dictionary:
 		"back": {"p": Vector3(0, H * 0.6, -T / 2 - 0.001), "n": Vector3.FORWARD, "r": 0.05}}}
 
 
-static func _calendar() -> Dictionary:
+static func _calendar(texname: String) -> Dictionary:
 	var g := node(null)
 	var W := 0.3
 	var H := 0.44
 	var T := 0.004
 	box(g, Vector3(W, H, T), mat(0xeeeeee), Vector3(0, H / 2, 0))
-	quad(g, W, H, tmat("calendar_e1", 0.9), Vector3(0, H / 2, T / 2 + 0.0004))
+	quad(g, W, H, tmat(texname, 0.9), Vector3(0, H / 2, T / 2 + 0.0004))
 	box(g, Vector3(W, 0.015, 0.01), mat(0x888888, 0.4, 0.6), Vector3(0, H - 0.004, 0))
 	return {"g": g, "view": Vector3.ZERO, "anchors": {"front": {"p": Vector3(0, H * 0.45, T / 2 + 0.001), "n": Vector3.BACK, "r": 0.08}}}
 
@@ -1096,3 +1123,247 @@ static func _tub(p: Dictionary) -> Dictionary:
 	cyl(g, 0.042, 0.042, 0.02, mat(int(p.get("cap", 0x7bc39a)), 0.4), Vector3(0, 0.1, 0))
 	band(g, 0.0405, 0.06, tmat(p.get("tex", "tub_slim"), 0.7), 0.045)
 	return {"g": g, "lie": 0.042}
+
+
+# ───────────────────────────── 4·5장 가구
+static func _boiler_room() -> Dictionary:
+	var g := node(null)
+	var w := 0.6
+	var d := 0.45
+	var h := 2.1
+	var wm := mat(0xe8e4dc, 0.6)
+	box(g, Vector3(0.03, h, d), wm, Vector3(-w / 2 + 0.015, h / 2, 0))
+	box(g, Vector3(0.03, h, d), wm, Vector3(w / 2 - 0.015, h / 2, 0))
+	box(g, Vector3(w, 0.04, d), wm, Vector3(0, h - 0.02, 0))
+	box(g, Vector3(w, h, 0.02), mat(0xcfc9bd, 0.8), Vector3(0, h / 2, -d / 2 + 0.01))
+	box(g, Vector3(0.36, 0.5, 0.26), mat(0xf2f2ee, 0.4), Vector3(0, 1.3, -0.07))
+	box(g, Vector3(0.12, 0.05, 0.01), mat(0x1b2420), Vector3(0, 1.4, 0.065))
+	var pm := mat(0xb7b7b2, 0.35, 0.6)
+	cyl(g, 0.045, 0.045, 0.22, pm, Vector3(0, 1.66, -0.07), 16)
+	cyl(g, 0.05, 0.05, 0.3, pm, Vector3(0.03, 1.96, -0.07), 16)
+	box(g, Vector3(0.22, 0.3, 0.004), mat(0x161412, 1.0, 0.0, {"alpha": 0.8}), Vector3(0.01, 1.82, -d / 2 + 0.023))
+	var door := node(g, Vector3(w / 2 - 0.015, 0, d / 2))
+	door.rotation.y = deg_to_rad(70)
+	box(door, Vector3(w - 0.03, h - 0.05, 0.025), wm, Vector3(-(w - 0.03) / 2, h / 2, 0))
+	for i in range(10):
+		box(door, Vector3(w - 0.12, 0.018, 0.03), mat(0xd6d0c4, 0.7), Vector3(-(w - 0.03) / 2, 0.35 + i * 0.1, 0.006))
+	return {"g": g, "foot": Vector2(w, d)}
+
+
+static func _suitcase() -> Dictionary:
+	var g := node(null)
+	var shell := mat(0x2f5a8a, 0.4)
+	box(g, Vector3(0.45, 0.12, 0.65), shell, Vector3(0, 0.06, 0))
+	box(g, Vector3(0.4, 0.05, 0.28), mat(0xd9c7a6, 1.0), Vector3(0, 0.125, -0.15))
+	box(g, Vector3(0.38, 0.04, 0.25), mat(0x6b7a8a, 1.0), Vector3(0.01, 0.12, 0.16))
+	box(g, Vector3(0.1, 0.03, 0.07), mat(0xf2c230, 0.6), Vector3(0.12, 0.152, 0.18))
+	var lid := node(g, Vector3(0, 0.12, -0.325))
+	lid.rotation.x = deg_to_rad(-100)
+	box(lid, Vector3(0.45, 0.04, 0.65), shell, Vector3(0, 0.02, 0.325))
+	box(g, Vector3(0.12, 0.02, 0.02), mat(0x222222), Vector3(0, 0.08, 0.335))
+	return {"g": g, "foot": Vector2(0.45, 0.66)}
+
+
+static func _pc_desk(p: Dictionary) -> Dictionary:
+	var g := node(null)
+	var w: float = p.get("w", 1.6)
+	var d := 0.6
+	var h := 0.74
+	box(g, Vector3(w, 0.03, d), mat(0x1e1f22, 0.4), Vector3(0, h - 0.015, 0))
+	for sx in [-1, 1]:
+		box(g, Vector3(0.05, h - 0.03, d - 0.05), mat(0x2a2b2e, 0.4, 0.4), Vector3(sx * (w / 2 - 0.04), (h - 0.03) / 2, 0))
+	for i in range(2):
+		var mx := -0.27 + i * 0.54
+		box(g, Vector3(0.52, 0.32, 0.03), mat(0x111214, 0.3), Vector3(mx, h + 0.3, -d / 2 + 0.12))
+		var scr := tmat("monitor_draw" if i == 0 else "monitor_chat", 0.3, {"emit_tex": true, "emission_energy_multiplier": 0.9})
+		quad(g, 0.49, 0.29, scr, Vector3(mx, h + 0.3, -d / 2 + 0.136))
+		box(g, Vector3(0.05, 0.14, 0.05), mat(0x222326, 0.4, 0.4), Vector3(mx, h + 0.08, -d / 2 + 0.1))
+		box(g, Vector3(0.22, 0.015, 0.15), mat(0x222326, 0.4, 0.4), Vector3(mx, h + 0.008, -d / 2 + 0.1))
+	box(g, Vector3(0.44, 0.02, 0.14), mat(0x2a2c30, 0.5), Vector3(0, h + 0.01, 0.06))
+	box(g, Vector3(0.3, 0.012, 0.2), mat(0x18181a, 0.4), Vector3(0.48, h + 0.006, 0.08))
+	box(g, Vector3(0.2, 0.42, 0.42), mat(0x141518, 0.35, 0.3), Vector3(-w / 2 + 0.16, 0.21, 0.0))
+	return {"g": g, "foot": Vector2(w, d)}
+
+
+static func _gaming_chair() -> Dictionary:
+	var g := node(null)
+	var m := mat(0x1d1f24, 0.6)
+	box(g, Vector3(0.5, 0.08, 0.5), m, Vector3(0, 0.48, 0))
+	var back := box(g, Vector3(0.5, 0.8, 0.08), m, Vector3(0, 0.92, 0.24))
+	back.rotation.x = 0.12
+	var stripe := box(g, Vector3(0.22, 0.62, 0.085), mat(0x7a2a3a, 0.6), Vector3(0, 0.95, 0.236))
+	stripe.rotation.x = 0.12
+	cyl(g, 0.03, 0.03, 0.4, mat(0x444444, 0.3, 0.6), Vector3(0, 0.24, 0), 10)
+	for i in range(5):
+		var a := i / 5.0 * TAU
+		var leg := box(g, Vector3(0.3, 0.03, 0.04), mat(0x2a2a2a, 0.4, 0.4), Vector3(cos(a) * 0.15, 0.05, sin(a) * 0.15))
+		leg.rotation.y = -a
+		sph(g, 0.025, mat(0x111111, 0.5), Vector3(cos(a) * 0.3, 0.025, sin(a) * 0.3), 8)
+	for sx in [-1, 1]:
+		box(g, Vector3(0.06, 0.04, 0.3), m, Vector3(sx * 0.27, 0.68, 0.02))
+		box(g, Vector3(0.03, 0.18, 0.03), m, Vector3(sx * 0.27, 0.58, 0.08))
+	return {"g": g, "foot": Vector2(0.55, 0.55)}
+
+
+static func _bookshelf(p: Dictionary) -> Dictionary:
+	var g := node(null)
+	var w: float = p.get("w", 1.0)
+	var d := 0.32
+	var h := 1.8
+	var wm := mat(0x3a3330, 0.6)
+	box(g, Vector3(0.03, h, d), wm, Vector3(-w / 2 + 0.015, h / 2, 0))
+	box(g, Vector3(0.03, h, d), wm, Vector3(w / 2 - 0.015, h / 2, 0))
+	box(g, Vector3(w, h, 0.02), wm, Vector3(0, h / 2, -d / 2 + 0.01))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 77
+	var cols := [0x8a3a3a, 0x3a5a8a, 0xd8c070, 0x4a7a5a, 0xe8e0d0, 0x6a4a7a, 0x2a2a2e, 0xc06040]
+	for s in range(6):
+		var y := 0.03 + s * 0.35
+		box(g, Vector3(w - 0.03, 0.025, d - 0.02), wm, Vector3(0, y, 0))
+		if s == 5:
+			break
+		var x := -w / 2 + 0.05
+		while x < w / 2 - 0.08:
+			var bw := 0.02 + rng.randf() * 0.03
+			var bh := 0.18 + rng.randf() * 0.1
+			if rng.randf() < 0.12:
+				var fig := cyl(g, 0.03, 0.035, 0.12, mat(cols[rng.randi() % cols.size()], 0.5), Vector3(x + 0.03, y + 0.075, 0.02), 10)
+				sph(g, 0.03, mat(0xe8c8a8, 0.6), fig.position + Vector3(0, 0.09, 0), 8)
+				x += 0.09
+				continue
+			box(g, Vector3(bw, bh, d - 0.08), mat(cols[rng.randi() % cols.size()], 0.8), Vector3(x + bw / 2, y + 0.0125 + bh / 2, 0.01))
+			x += bw + 0.004
+	return {"g": g, "foot": Vector2(w, d)}
+
+
+static func _aircon() -> Dictionary:
+	var g := node(null)
+	box(g, Vector3(0.8, 0.28, 0.2), mat(0xf4f4f2, 0.35), Vector3.ZERO)
+	box(g, Vector3(0.72, 0.03, 0.02), mat(0xcfcfcb, 0.5), Vector3(0, -0.11, 0.1))
+	sph(g, 0.008, mat(0x2a2a2a, 0.3, 0.0, {"emit": 0x3aff6a, "emit_e": 2.0}), Vector3(0.32, 0.06, 0.101), 6)
+	return {"g": g}
+
+
+static func _fan() -> Dictionary:
+	var g := node(null)
+	var m := mat(0xe8e8e4, 0.45)
+	cyl(g, 0.16, 0.18, 0.04, m, Vector3(0, 0.02, 0), 20)
+	cyl(g, 0.015, 0.015, 0.95, m, Vector3(0, 0.5, 0), 10)
+	var head := node(g, Vector3(0, 1.0, 0.02))
+	ring(head, 0.17, 0.01, m, Vector3(0, 0, 0.06))
+	for i in range(3):
+		var a := i * TAU / 3.0
+		var bl := box(head, Vector3(0.05, 0.13, 0.008), mat(0xaecde0, 0.4, 0.0, {"alpha": 0.8}), Vector3(-sin(a) * 0.065, cos(a) * 0.065, 0.06))
+		bl.rotation.z = a
+	var hub := cyl(head, 0.05, 0.05, 0.09, m, Vector3(0, 0, -0.01), 12)
+	hub.rotation.x = PI / 2
+	return {"g": g, "foot": Vector2(0.3, 0.3)}
+
+
+static func _trays() -> Dictionary:
+	var g := node(null)
+	for i in range(5):
+		var t := box(g, Vector3(0.36, 0.02, 0.27), mat(0xc9d8c0 if i % 2 == 0 else 0xe6dcc6, 0.5), Vector3((i % 2) * 0.01, 0.01 + i * 0.022, (i % 3) * 0.008))
+		t.rotation.y = (i - 2) * 0.04
+	for v in [Vector3(-0.09, 0.13, -0.05), Vector3(0.08, 0.13, -0.05)]:
+		cyl(g, 0.045, 0.035, 0.04, mat(0xf2f0ea, 0.3), v, 14)
+	return {"g": g, "foot": Vector2(0.38, 0.3)}
+
+
+# ───────────────────────────── 4·5장 유품
+static func _standing_box(w: float, h: float, d: float, texname: String, side: int) -> Dictionary:
+	var g := node(null)
+	box(g, Vector3(w, h, d), mat(side, 0.6), Vector3(0, h / 2, 0))
+	quad(g, w - 0.002, h - 0.002, tmat(texname, 0.6), Vector3(0, h / 2, d / 2 + 0.0005))
+	return {"g": g, "view": Vector3.ZERO, "anchors": {
+		"front": {"p": Vector3(0, h / 2, d / 2 + 0.001), "n": Vector3.BACK, "r": min(w, h) * 0.4},
+		"back": {"p": Vector3(0, h / 2, -d / 2 - 0.001), "n": Vector3.FORWARD, "r": min(w, h) * 0.4}}}
+
+
+static func _laptop() -> Dictionary:
+	var g := node(null)
+	box(g, Vector3(0.32, 0.018, 0.22), mat(0x3a3c42, 0.35, 0.3), Vector3(0, 0.009, 0))
+	plane_up(g, 0.3, 0.2, tmat("laptop_keys", 0.6), Vector3(0, 0.0185, 0))
+	var pivot := node(g, Vector3(0, 0.018, -0.11))
+	pivot.rotation.x = deg_to_rad(-105)
+	box(pivot, Vector3(0.32, 0.01, 0.22), mat(0x3a3c42, 0.35, 0.3), Vector3(0, 0.005, 0.11))
+	plane_down(pivot, 0.3, 0.2, tmat("laptop_lock", 0.2, {"emit_tex": true, "emission_energy_multiplier": 0.35}), Vector3(0, -0.0005, 0.11))
+	var n := Vector3(0, 0.2588, 0.9659)
+	var c := Vector3(0, 0.124, -0.138)
+	return {"g": g, "view": Vector3.ZERO, "anchors": {
+		"screen": {"p": c, "n": n, "r": 0.08},
+		"back": {"p": c - n * 0.011, "n": -n, "r": 0.08}}}
+
+
+static func _giftbox() -> Dictionary:
+	var g := node(null)
+	var W := 0.32
+	var H := 0.1
+	var D := 0.24
+	var wrap := node(g)
+	var wm := tmat("gift_wrap", 0.7)
+	wm.uv1_triplanar = true
+	wm.uv1_scale = Vector3(3, 3, 3)
+	box(wrap, Vector3(W, H, D), wm, Vector3(0, H / 2, 0))
+	var rib := mat(0xb8323a, 0.5)
+	box(wrap, Vector3(0.03, H + 0.004, D + 0.004), rib, Vector3(0, H / 2, 0))
+	box(wrap, Vector3(W + 0.004, H + 0.004, 0.03), rib, Vector3(0, H / 2, 0))
+	sph(wrap, 0.03, rib, Vector3(0, H + 0.01, 0), 10).scale = Vector3(1.6, 0.6, 1.0)
+	var tag := plane_up(wrap, 0.1, 0.055, tmat("gift_tag", 0.9), Vector3(0.09, H + 0.002, 0.06))
+	tag.rotation.y = 0.3
+	var inner := node(g)
+	box(inner, Vector3(W, 0.02, D), mat(0x6b4a2e, 0.55), Vector3(0, 0.01, 0))
+	plane_up(inner, W - 0.03, D - 0.03, tmat("portrait_family", 0.4), Vector3(0, 0.0205, 0))
+	inner.visible = false
+	return {"g": g, "view": Vector3(35, 0, 0), "unwrap": {"hide": wrap, "show": inner}, "anchors": {
+		"top": {"p": Vector3(0, H, 0), "n": Vector3.UP, "r": 0.07},
+		"front": {"p": Vector3(0, H / 2, D / 2 + 0.001), "n": Vector3.BACK, "r": 0.04}}}
+
+
+static func _dress() -> Dictionary:
+	var g := node(null)
+	box(g, Vector3(0.34, 0.03, 0.46), mat(0x2b3a5a, 0.9), Vector3(0, 0.015, 0))
+	box(g, Vector3(0.14, 0.006, 0.05), mat(0xf2efe8, 0.8), Vector3(0, 0.033, -0.2))
+	var tg := plane_up(g, 0.05, 0.075, tmat("price_tag", 0.9), Vector3(0.11, 0.0315, 0.12))
+	tg.rotation.y = -0.4
+	return {"g": g, "view": Vector3(90, 0, 0), "anchors": {
+		"tag": {"p": Vector3(0.11, 0.031, 0.12), "n": Vector3.UP, "r": 0.04},
+		"front": {"p": Vector3(-0.06, 0.03, -0.05), "n": Vector3.UP, "r": 0.06}}}
+
+
+static func _figure() -> Dictionary:
+	var g := node(null)
+	cyl(g, 0.035, 0.035, 0.01, mat(0x222222, 0.4), Vector3(0, 0.005, 0), 16)
+	cyl(g, 0.016, 0.022, 0.07, mat(0x5a6fa8, 0.5), Vector3(0, 0.045, 0), 12)
+	sph(g, 0.02, mat(0xf0d4bc, 0.6), Vector3(0, 0.095, 0), 12)
+	var hair := sph(g, 0.021, mat(0x2a2030, 0.5), Vector3(0, 0.1, -0.004), 12)
+	hair.scale = Vector3(1.05, 0.9, 1.05)
+	return {"g": g, "view": Vector3.ZERO, "anchors": {"bottom": {"p": Vector3.ZERO, "n": Vector3.DOWN, "r": 0.03}}}
+
+
+static func _uniform() -> Dictionary:
+	var g := node(null)
+	box(g, Vector3(0.36, 0.05, 0.42), mat(0xf4f4f0, 0.9), Vector3(0, 0.025, 0))
+	var net := sph(g, 0.08, mat(0xffffff, 1.0), Vector3(0.1, 0.065, 0.12), 12)
+	net.scale = Vector3(1, 0.3, 1)
+	plane_up(g, 0.08, 0.032, tmat("uniform_tag", 0.8), Vector3(-0.09, 0.0505, -0.1))
+	return {"g": g, "view": Vector3(75, 0, 0), "anchors": {"front": {"p": Vector3(-0.09, 0.05, -0.1), "n": Vector3.UP, "r": 0.05}}}
+
+
+static func _piping_kit() -> Dictionary:
+	var g := node(null)
+	var cone := cyl(g, 0.045, 0.004, 0.18, mat(0xe8e8e2, 0.4, 0.0, {"alpha": 0.85}), Vector3(0, 0.045, 0), 16)
+	cone.rotation.z = PI / 2
+	for i in range(4):
+		cyl(g, 0.008, 0.004, 0.02, mat(0xc0c0c0, 0.25, 0.8), Vector3(-0.06 + i * 0.03, 0.01, 0.07), 10)
+	return {"g": g, "view": Vector3(60, 0, 0), "anchors": {"top": {"p": Vector3(0, 0.09, 0), "n": Vector3.UP, "r": 0.05}}}
+
+
+static func _onigiri() -> Dictionary:
+	var g := node(null)
+	var pm := PrismMesh.new()
+	pm.size = Vector3(0.09, 0.08, 0.03)
+	var n := mi(g, pm, mat(0xf4f4f0, 0.6), Vector3(0, 0.015, 0))
+	n.rotation.x = -PI / 2
+	box(g, Vector3(0.09, 0.031, 0.025), mat(0x1c1c1c, 0.6), Vector3(0, 0.0155, 0.028))
+	return {"g": g}
