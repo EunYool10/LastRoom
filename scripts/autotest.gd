@@ -1124,3 +1124,108 @@ func reach_test(ei: int) -> void:
 				bad.append("%s %s (%.2f, %.2f, %.2f)" % [it.def.id, it.def.name, c.x, c.y, c.z])
 		print("REACH ", Game.EPISODES[e].id, " items=", room.items.size(), " unreachable=", bad)
 	get_tree().quit()
+
+
+func _mouse(p: Vector2, pressed: bool) -> void:
+	var e := InputEventMouseButton.new()
+	e.button_index = MOUSE_BUTTON_LEFT
+	e.position = _wp(p)
+	e.global_position = e.position
+	e.pressed = pressed
+	Input.parse_input_event(e)
+	for i in 3:
+		await get_tree().process_frame
+
+
+func _mouse_move(p: Vector2, rel: Vector2) -> void:
+	var e := InputEventMouseMotion.new()
+	e.position = _wp(p)
+	e.global_position = e.position
+	e.relative = rel
+	Input.parse_input_event(e)
+	for i in 2:
+		await get_tree().process_frame
+
+
+## 버튼 · 조사 · 집기가 씹히지 않는지 (--clicktest)
+func click_test(o: String) -> void:
+	out = o
+	await _wait(1.0)
+	# 1) 글자 버튼: 글자 오른쪽 12px 바깥을 눌러도 눌린다
+	Game.open_settings(0)
+	await _wait(0.4)
+	var close_b: Button = null
+	for b in Game.modal_root.find_children("*", "Button", true, false):
+		if b.text == "닫기":
+			close_b = b
+	var r := close_b.get_global_rect()
+	await _mouse(Vector2(r.end.x + 12, r.get_center().y), true)
+	await _mouse(Vector2(r.end.x + 12, r.get_center().y), false)
+	await _wait(0.4)
+	print("CLICK text button 12px outside -> closed=", not Game.modal_open)
+	# 2) 집기: 작은 물건에서 1.4° 비껴 겨눠도 잡힌다 (3장 포스트잇)
+	Game.show_brief(Game.EPISODES[2])
+	await _wait(0.3)
+	Game.enter_room()
+	for i in range(80):
+		if Game.pause_root.visible:
+			break
+		await _wait(0.1)
+	Game.hide_pause()
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	await _wait(0.5)
+	var room = Game.world
+	var target = null
+	for it in room.items:
+		if it.def.id == "postit":
+			target = it
+	await _face(room, target.shape.global_position, 1.0)
+	await _wait(0.2)
+	room.player.rotation.y = room.yaw
+	room.head.rotation.x = room.pitch
+	room._raycast()
+	var center_ok: bool = room.aim != null and room.aim.obj == target
+	room.yaw += 0.025
+	room.player.rotation.y = room.yaw
+	room._raycast()
+	var off_ok: bool = room.aim != null and room.aim.obj == target
+	print("CLICK aim center=", center_ok, " offset 1.4deg=", off_ok)
+	# 3) 조사: 누르는 사이 20px 움직여도 펼쳐진다 (다이어리 앞면)
+	for it in room.items:
+		if it.state != "gone":
+			room.sort_item(it, it.def.kind != "trash")
+	for s2 in room.stains:
+		s2.done = true
+		s2.progress = 1.0
+	room.complete = true
+	room.try_exit()
+	await _wait(2.6)
+	var ins = Game.world
+	ins.select("diary")
+	await _wait(1.0)
+	var front = null
+	for sp in ins.cur.m.spots:
+		if sp.name == "front":
+			front = sp
+	var sc: Vector2 = ins.cam.unproject_position(front.body.global_position)
+	# 사람이 짧게 누르는 것처럼: 누르기 → 두 번 움직임 → 떼기를 한 번에 보낸다
+	for ev in [[sc, true, Vector2.ZERO], [sc + Vector2(8, 4), null, Vector2(8, 4)], [sc + Vector2(14, 8), null, Vector2(6, 4)], [sc + Vector2(14, 8), false, Vector2.ZERO]]:
+		if ev[1] == null:
+			var m := InputEventMouseMotion.new()
+			m.position = _wp(ev[0])
+			m.global_position = m.position
+			m.relative = ev[2]
+			Input.parse_input_event(m)
+		else:
+			var e := InputEventMouseButton.new()
+			e.button_index = MOUSE_BUTTON_LEFT
+			e.position = _wp(ev[0])
+			e.global_position = e.position
+			e.pressed = ev[1]
+			Input.parse_input_event(e)
+	for i in 40:
+		if Game.modal_open:
+			break
+		await _wait(0.05)
+	print("CLICK inspect click with 22px jitter -> opened=", Game.modal_open, " spot_done=", Game.S.spots.has("diary:front"), " drag=", ins.drag, " pick_at_release=", ins._pick_near(sc + Vector2(14, 8)) != null)
+	get_tree().quit()

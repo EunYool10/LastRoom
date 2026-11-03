@@ -1,21 +1,18 @@
 {
-  "version": "1.3.0",
+  "version": "1.3.1",
   "date": "2026-11-03",
   "notes": [
-    "시작 화면(YOOL 제작 → 마지막 방 표지)",
-    "설정을 현장 장비 점검표로 새로 꾸미고 시야 · 화질 · 깜빡임 줄이기 · 효과음과 주변 소리 · 숙이기 방식 · 기록 백업 코드를 더함",
-    "보관함 새 단장, 폐기 봉투에서도 꺼내기, 서랍 · 문 · 뚜껑 다시 닫기, 펼쳐 읽기 버튼",
-    "2장 연탄난로 · 싱크대 새 모델, 3장 다이어리를 집을 수 없던 문제와 끝낸 장이 잠기던 문제(4장) 수정, 새 앱 아이콘",
-    "보안: 받은 설치 파일이 원본과 같은지 확인한 다음에만 설치",
-    "문의 이메일: eunyool100208@gmail.com"
+    "버튼이 씹히던 문제: 글자 버튼은 글자 둘레까지, 유품 조사는 손이 조금 떨려도 눌린다",
+    "현장에서 작은 물건 · 서랍 · 문을 살짝 비껴 겨눠도 집거나 연다",
+    "1.3.0: 시작 화면, 클립보드 점검표 설정, 보관함 새 단장, 기록 백업 코드, 3장 다이어리 · 4장 열림 수정, 새 아이콘"
   ],
-  "windows": "https://github.com/EunYool10/LastRoom/releases/download/v1.3.0/LastRoom-Setup-1.3.0.exe",
-  "android": "https://github.com/EunYool10/LastRoom/releases/download/v1.3.0/LastRoom-1.3.0-android.apk",
-  "mac": "https://github.com/EunYool10/LastRoom/releases/download/v1.3.0/LastRoom-1.3.0-mac.zip",
+  "windows": "https://github.com/EunYool10/LastRoom/releases/download/v1.3.1/LastRoom-Setup-1.3.1.exe",
+  "android": "https://github.com/EunYool10/LastRoom/releases/download/v1.3.1/LastRoom-1.3.1-android.apk",
+  "mac": "https://github.com/EunYool10/LastRoom/releases/download/v1.3.1/LastRoom-1.3.1-mac.zip",
   "sha256": {
-    "windows": "28b098c59a009b3a692fd20a604992bee3993872b3013603bf6bca016917ae70",
-    "android": "52cf08f15ba217ff505598695631e64b63e9e8bc00163f210d48c0479ad430e4",
-    "mac": "a98a2cef1deee405717cddb21123bf2520f14dd64a7a7f1b95e3179f18a220f6"
+    "windows": "212e0751c04c7faa5dced478692d4689b60b2892686e86b6961a162f30e13cdc",
+    "android": "3cf0b0da8d24cd38ee4c39e191ba970f862879bc953eb89f7e441a6835aa534d",
+    "mac": "602bb2cf5f303a3132dc28b33051d471e0399e4de1ddfa1aea8ec0919b4661e8"
   },
   "page": "https://eunyool10.github.io/LastRoom/",
   "terms": "2026-11-03"

@@ -5,7 +5,7 @@ const RoomScript := preload("res://scripts/room.gd")
 const InspectScript := preload("res://scripts/inspect.gd")
 const BoardScript := preload("res://scripts/board.gd")
 const SAVE_PATH := "user://save.json"
-const VERSION := "1.3.0"
+const VERSION := "1.3.1"
 const CONTACT := "eunyool100208@gmail.com"
 
 var EPISODES: Array = []
@@ -96,6 +96,8 @@ func _ready() -> void:
 			at.update_test(test)
 		elif args.has("--reachtest"):
 			at.reach_test(ei)
+		elif args.has("--clicktest"):
+			at.click_test(test)
 		elif args.has("--cleantest"):
 			at.clean_test(test, ei)
 		elif args.has("--settingstest"):

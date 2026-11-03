@@ -137,7 +137,7 @@ static func bb(s: String) -> String:
 
 
 static func button(text: String, size := 20, cb: Callable = Callable(), font: Font = null, color := TEXT, hover := ACCENT) -> Button:
-	var b := Button.new()
+	var b := HitButton.new()
 	b.text = text
 	b.flat = true
 	b.focus_mode = Control.FOCUS_NONE
@@ -580,3 +580,10 @@ static func board_box() -> StyleBoxFlat:
 	s.shadow_size = 18
 	s.shadow_offset = Vector2(0, 8)
 	return s
+
+
+## 글자만 보이는 버튼: 글자 둘레보다 넉넉한 곳(옆으로 16, 위아래로 4)까지 눌린다.
+## 글자 사이 빈틈을 눌러 '씹히는' 일이 없게 한다
+class HitButton extends Button:
+	func _has_point(p: Vector2) -> bool:
+		return Rect2(Vector2(-16, -4), size + Vector2(32, 8)).has_point(p)

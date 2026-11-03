@@ -574,10 +574,13 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			if event.pressed:
-				drag = {"moved": 0.0}
+				drag = {"moved": 0.0, "t": Time.get_ticks_msec()}
 			else:
-				if drag != null and drag.moved < (28.0 if Game.touch else 7.0):
-					var sp = _pick_near(event.position) if Game.touch else _pick(event.position)
+				# 누르는 사이 손이 조금 떨려도 '누르기'로 본다 (짧게 누르면 더 너그럽게)
+				var quick: bool = drag != null and Time.get_ticks_msec() - int(drag.t) < 300
+				var limit := 28.0 if Game.touch else (34.0 if quick else 22.0)
+				if drag != null and drag.moved < limit:
+					var sp = _pick_near(event.position)
 					if sp != null:
 						_activate(sp)
 					vel = Vector2.ZERO
@@ -590,8 +593,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		if drag != null:
 			var r: Vector2 = event.relative
 			drag.moved += abs(r.x) + abs(r.y)
-			_rotate(r * 0.009)
-			vel = r * 0.009
+			# 조금 움직인 것(손 떨림)으로는 돌리지 않는다: 누르려던 곳이 비껴가지 않게
+			if drag.moved > 10.0:
+				_rotate(r * 0.009)
+				vel = r * 0.009
 		else:
 			hover = _pick(event.position)
 			U.tip.visible = hover != null

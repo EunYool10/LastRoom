@@ -1100,31 +1100,44 @@ func _physics_process(dt: float) -> void:
 	_update_prompt()
 
 
+## 손으로 집을 때 한가운데가 살짝 비껴가면 둘레(약 1.5° · 2.5°)도 살핀다
+const AIM_ASSIST := [Vector2(0.025, 0), Vector2(-0.025, 0), Vector2(0, 0.025), Vector2(0, -0.025), Vector2(0.045, 0), Vector2(-0.045, 0), Vector2(0, 0.045), Vector2(0, -0.045)]
+
+
 func _raycast() -> void:
 	var from := cam.global_position
 	var to := from - cam.global_transform.basis.z * 3.2
-	var q := PhysicsRayQueryParameters3D.create(from, to, RAY_MASK)
-	var hit := get_world_3d().direct_space_state.intersect_ray(q)
-	aim = null
 	_stain_target()
+	aim = _aim_ray(from, to)
+	# 작은 물건을 겨누다 살짝 비껴가도 E · 클릭이 헛돌지 않게, 가까운 물건 · 서랍 · 문을 잡는다
+	if tool == 1 and card == null and (aim == null or not (aim.type in ["item", "env", "door"])):
+		var b := cam.global_transform.basis
+		for o in AIM_ASSIST:
+			var dir: Vector3 = (-b.z + b.x * o.x + b.y * o.y).normalized()
+			var a2 = _aim_ray(from, from + dir * 3.2)
+			if a2 != null and a2.type in ["item", "env", "door"]:
+				aim = a2
+				break
+
+
+func _aim_ray(from: Vector3, to: Vector3):
+	var space := get_world_3d().direct_space_state
+	var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(from, to, RAY_MASK))
 	if hit.is_empty():
-		return
+		return null
 	# 가구는 겉모양을 감싼 상자로 막는다. 이불 위 다이어리처럼 그 상자에 살짝 묻힌 물건도
 	# 겨눈 곳 바로 뒤(8cm 안)에 있으면 집을 수 있다
 	if not hit.collider.has_meta("ref"):
-		var q2 := PhysicsRayQueryParameters3D.create(from, to, L_ITEM)
-		var h2 := get_world_3d().direct_space_state.intersect_ray(q2)
+		var h2 := space.intersect_ray(PhysicsRayQueryParameters3D.create(from, to, L_ITEM))
 		if not h2.is_empty() and from.distance_to(h2.position) - from.distance_to(hit.position) < 0.08:
 			hit = h2
-	var col: Object = hit.collider
 	var dist := from.distance_to(hit.position)
-	if col.has_meta("ref"):
-		var ref: Dictionary = col.get_meta("ref")
-		aim = {"type": ref.type, "obj": ref.get("obj"), "dist": dist, "pos": hit.position}
-		if aim.type == "stain" and aim.obj.dead:
-			aim = null
-	else:
-		aim = {"type": "solid", "obj": null, "dist": dist, "pos": hit.position}
+	if hit.collider.has_meta("ref"):
+		var ref: Dictionary = hit.collider.get_meta("ref")
+		if ref.type == "stain" and ref.obj.dead:
+			return null
+		return {"type": ref.type, "obj": ref.get("obj"), "dist": dist, "pos": hit.position}
+	return {"type": "solid", "obj": null, "dist": dist, "pos": hit.position}
 
 
 ## 분무기 · 스크러버가 닿는 얼룩. 물건은 통과하고 벽 · 가구에서는 멈춘다.
