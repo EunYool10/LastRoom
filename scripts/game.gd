@@ -5,7 +5,7 @@ const RoomScript := preload("res://scripts/room.gd")
 const InspectScript := preload("res://scripts/inspect.gd")
 const BoardScript := preload("res://scripts/board.gd")
 const SAVE_PATH := "user://save.json"
-const VERSION := "1.3.2"
+const VERSION := "1.3.3"
 const CONTACT := "eunyool100208@gmail.com"
 
 var EPISODES: Array = []
@@ -1258,10 +1258,10 @@ func open_inventory(quiet := false) -> void:
 	v.add_child(Ui.rule(0.15))
 	var foot := Ui.hbox(24)
 	var fl := Ui.label("꺼낸 물건은 처음 있던 자리로 돌아간다. 다시 집어서 분류하면 된다.", 14, Ui.INK_DIM, Ui.sans)
-	var hl: int = world.hidden_left()
-	if hl > 0:
-		# 남은 물건 수에는 아직 못 찾은(서랍 · 장롱 · 가방 안) 물건도 들어 있다
-		fl.text = "남은 물건 중 %d개는 아직 찾지 못했다. 열어 보지 않은 곳을 살펴보자." % hl
+	var place: String = world.hidden_place()
+	if world.hidden_left() > 0 and place != "":
+		# 아직 열어 보지 않은 서랍 · 장롱 · 가방이 있으면 알려 준다 (열지 않고 나가면 안의 물건은 챙겨 간다)
+		fl.text = "%s%s 아직 열어 보지 않았다. 안에 무언가 있을지도 모른다." % [place, world._obj_particle(place)]
 		fl.add_theme_color_override("font_color", Ui.RED)
 	fl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	foot.add_child(Ui.expand(fl))

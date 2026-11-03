@@ -1,18 +1,18 @@
 {
-  "version": "1.3.2",
-  "date": "2026-11-03",
+  "version": "1.3.3",
+  "date": "2026-11-04",
   "notes": [
-    "숨은 물건 안내: 보이는 물건을 다 분류하면 아직 못 찾은 물건과 열어 볼 곳을 알려 준다",
-    "1.3.1: 버튼이 씹히던 문제 수정(글자 버튼 둘레까지 눌림, 조사 중 손 떨림 허용, 살짝 비껴 겨눠도 집기)",
-    "1.3.0: 시작 화면, 클립보드 점검표 설정, 보관함 새 단장, 기록 백업 코드, 3장 다이어리 · 4장 열림 수정, 새 아이콘"
+    "2장 자개장 안의 자개함을 꺼낼 수 있게 고쳤어요.",
+    "보이는 물건을 모두 분류하고 얼룩을 다 닦으면 나갈 수 있어요. 열어 보지 못한 곳의 유품은 나갈 때 함께 챙겨 가요.",
+    "버튼이 더 잘 눌리고, 아직 열어 보지 않은 곳이 있으면 알려 드려요."
   ],
-  "windows": "https://github.com/EunYool10/LastRoom/releases/download/v1.3.2/LastRoom-Setup-1.3.2.exe",
-  "android": "https://github.com/EunYool10/LastRoom/releases/download/v1.3.2/LastRoom-1.3.2-android.apk",
-  "mac": "https://github.com/EunYool10/LastRoom/releases/download/v1.3.2/LastRoom-1.3.2-mac.zip",
+  "windows": "https://github.com/EunYool10/LastRoom/releases/download/v1.3.3/LastRoom-Setup-1.3.3.exe",
+  "android": "https://github.com/EunYool10/LastRoom/releases/download/v1.3.3/LastRoom-1.3.3-android.apk",
+  "mac": "https://github.com/EunYool10/LastRoom/releases/download/v1.3.3/LastRoom-1.3.3-mac.zip",
   "sha256": {
-    "windows": "c46a0be5777a39bd2b2f242440eb97fadc82f57be811994147129686d453ba63",
-    "android": "a7c1212f165cbbe77fb5f692f9f225fbe9f4300e867d818a041d26686e9aa060",
-    "mac": "1b70e81270b89753bb22e4afdae5c3b2116e86795f00fc8047a3e84581fdbf95"
+    "windows": "63c368ac5b1c1816037f278327b958f15d8c0207a1bc2a077c9df298e91cefa5",
+    "android": "d381ffcd82af3a20fcf39a614d96773bf106ff98ba5112b321c005cd414e1a08",
+    "mac": "8dd9b6d2b8e38e6373e329b7d9a53f1242d166eddd001ca4c5fd0e54547cbf4c"
   },
   "page": "https://eunyool10.github.io/LastRoom/",
   "terms": "2026-11-03"

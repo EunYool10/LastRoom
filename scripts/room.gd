@@ -531,11 +531,15 @@ func _build_hud() -> void:
 
 
 func _counts() -> Dictionary:
-	var total := items.size()
+	# 아직 열어 보지 않은 서랍 · 장롱 · 가방 안의 물건은 찾기 전까지 세지 않는다
+	var total := 0
 	var sorted := 0
 	for it in items:
 		if it.state == "gone":
 			sorted += 1
+			total += 1
+		elif not it.hidden or _env_opened_for(it):
+			total += 1
 	var sdone := 0
 	var avg := 0.0
 	for st in stains:
@@ -554,9 +558,8 @@ func _update_hud() -> void:
 	H_.o1.text = ok.call(c.sdone == c.stotal) + "오염 제거   %d / %d   (%d%%)" % [c.sdone, c.stotal, int(c.avg * 100)]
 	H_.o2.text = ok.call(c.sorted == c.total) + "유품 분류   %d / %d" % [c.sorted, c.total]
 	# 보이는 건 다 분류했는데 숨은 물건(서랍 · 장롱 · 가방 안)이 남았으면 숫자가 왜 모자란지 알려 준다
-	var hl := hidden_left()
-	if hl > 0 and c.sorted + hl == c.total:
-		H_.o2.text += "   · 아직 못 찾은 물건 %d" % hl
+	if hidden_left() > 0 and c.sorted == c.total:
+		H_.o2.text += "   · 아직 열어 보지 않은 곳이 있다"
 	H_.o4.text = "기록한 단서   %d" % S.clues.size()
 	H_.o3.text = ok.call(false) + "현관으로 나가 작업실 복귀"
 	H_.o1.add_theme_color_override("font_color", Ui.OK if c.sdone == c.stotal else Ui.TEXT)
@@ -867,8 +870,8 @@ func _check_complete() -> void:
 		Sfx.play("done", 0.6)
 		Game.say("(정리가 끝났다. 현관으로 나가 작업실로 돌아가자.)", 4.5)
 		_update_hud()
-	elif not complete and c.total - c.sorted > 0 and c.sorted + hidden_left() == c.total and not hint_said:
-		# 보이는 물건은 다 분류했는데 숨은 물건이 남았다: 어디를 열어 봐야 하는지 바로 일러 준다
+	if c.sorted == c.total and hidden_left() > 0 and not hint_said:
+		# 보이는 물건은 다 분류했는데 열어 보지 않은 곳이 남았다: 어디인지 일러 준다 (나가도 되지만, 열어 보면 더 있다)
 		hint_said = true
 		var place := hidden_place()
 		if place != "":
@@ -913,6 +916,15 @@ static func _obj_particle(word: String) -> String:
 	return "을" if (c - 0xAC00) % 28 != 0 else "를"
 
 
+static func _subj_particle(word: String) -> String:
+	if word == "":
+		return "가"
+	var c := word.unicode_at(word.length() - 1)
+	if c < 0xAC00 or c > 0xD7A3:
+		return "가"
+	return "이" if (c - 0xAC00) % 28 != 0 else "가"
+
+
 func _stain_done(st: Stain) -> void:
 	S.stains[st.def.id] = 1
 	Game.toast(st.def.name + " 제거 완료")
@@ -948,6 +960,8 @@ func use_env(en) -> void:
 						it.hidden = false
 						it.root.visible = true
 						it.shape.disabled = false
+						if complete and it.state != "gone":
+							complete = false
 						_update_hud())
 		if d.has("reveal") and not d.has("anim"):
 			en.disabled = true
@@ -1034,6 +1048,21 @@ func try_exit() -> void:
 		return
 	exiting = true
 	using = false
+	var auto := []
+	for it in items:
+		if it.state != "gone" and it.hidden and not _env_opened_for(it) and it.def.kind != "trash":
+			it.state = "gone"
+			S.sorted[it.def.id] = "keep"
+			if not S.kept.has(it.def.id):
+				S.kept.append(it.def.id)
+			auto.append(it)
+	for it in auto:
+		var place := ""
+		for en in envs:
+			if en.def.get("reveal", "") == it.def.id:
+				place = str(en.def.name)
+		if place != "":
+			Game.say("(나가기 전에 %s%s 열어 보니 %s%s 있었다. 챙겨 간다.)" % [place, _obj_particle(place), it.def.name, _subj_particle(it.def.name)], 4.6)
 	Sfx.play("door", 0.9)
 	var s := 0.0
 	for st in stains:
@@ -1173,6 +1202,16 @@ func _aim_ray(from: Vector3, to: Vector3):
 		var h2 := space.intersect_ray(PhysicsRayQueryParameters3D.create(from, to, L_ITEM))
 		if not h2.is_empty() and from.distance_to(h2.position) - from.distance_to(hit.position) < 0.08:
 			hit = h2
+	# 서랍 · 장롱을 조사하는 범위(보이지 않는 공) 안이나 바로 뒤에 물건이 있으면 물건을 먼저 잡는다
+	# (열어 둔 자개장 안의 자개함을 집으려다 문이 닫히던 문제)
+	if hit.collider.has_meta("ref") and hit.collider.get_meta("ref").type == "env":
+		var h3 := space.intersect_ray(PhysicsRayQueryParameters3D.create(from, to, RAY_MASK & ~L_ENV))
+		if not h3.is_empty() and not h3.collider.has_meta("ref"):
+			var h4 := space.intersect_ray(PhysicsRayQueryParameters3D.create(from, to, L_ITEM))
+			if not h4.is_empty() and from.distance_to(h4.position) - from.distance_to(h3.position) < 0.08:
+				h3 = h4
+		if not h3.is_empty() and h3.collider.has_meta("ref") and h3.collider.get_meta("ref").type == "item":
+			hit = h3
 	var dist := from.distance_to(hit.position)
 	if hit.collider.has_meta("ref"):
 		var ref: Dictionary = hit.collider.get_meta("ref")

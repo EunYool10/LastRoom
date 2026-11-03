@@ -1231,12 +1231,9 @@ func click_test(o: String) -> void:
 	get_tree().quit()
 
 
-## 숨은 물건 안내: 보이는 물건을 다 분류하면 숫자 옆 안내 · 장소 혼잣말 (--hiddentest, 2장 자개장)
-func hidden_test(o: String) -> void:
-	out = o
-	DirAccess.make_dir_recursive_absolute(out)
-	await _wait(0.8)
-	Game.show_brief(Game.EPISODES[1])
+## 2장 자개장: 열어 둔 장 안의 자개함이 집히는지, 열지 않고도 21개로 끝내고 나갈 수 있는지 (--hiddentest)
+func _enter(ei: int):
+	Game.show_brief(Game.EPISODES[ei])
 	await _wait(0.3)
 	Game.enter_room()
 	for i in range(80):
@@ -1246,21 +1243,89 @@ func hidden_test(o: String) -> void:
 	Game.hide_pause()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	await _wait(0.6)
-	var room = Game.world
+	return Game.world
+
+
+func _aim_at(room, target: Vector3) -> void:
+	var p: Vector3 = room.player.position
+	var to: Vector3 = target - Vector3(p.x, room.eye, p.z)
+	room.yaw = atan2(-to.x, -to.z)
+	room.pitch = atan2(to.y, Vector2(to.x, to.z).length())
+	room.player.rotation.y = room.yaw
+	room.head.rotation.x = room.pitch
+	room._raycast()
+
+
+func hidden_test(o: String) -> void:
+	out = o
+	DirAccess.make_dir_recursive_absolute(out)
+	await _wait(0.8)
+	# (가) 자개장을 열고 바로 앞에서 자개함을 겨눈다
+	var room = await _enter(1)
+	var ward = null
+	for en in room.envs:
+		if en.def.id == "ward":
+			ward = en
+	var jbox = null
+	for it in room.items:
+		if it.def.id == "jbox":
+			jbox = it
+	room.use_env(ward)
+	await _wait(1.2)
+	room.player.position = Vector3(-0.5, 0, -0.1)
+	await get_tree().physics_frame
+	await get_tree().physics_frame
+	_aim_at(room, jbox.shape.global_position)
+	print("HIDDEN open wardrobe, aim at jbox -> ", room.aim.type if room.aim else "none", " is_jbox=", room.aim != null and room.aim.obj == jbox, " dist=%.2f" % (room.aim.dist if room.aim else -1.0))
+	await _wait(0.3)
+	await _shot("jbox_aim")
+	room.interact()
+	await _wait(0.4)
+	print("HIDDEN press E on jbox -> card=", room.card != null and room.card == jbox, " wardrobe_open=", ward.get("open", true))
+	room.card_action("keep")
+	await _wait(0.3)
+	_aim_at(room, Vector3(-1.2, 1.35, -0.7))
+	print("HIDDEN aim at wardrobe door -> ", room.aim.type if room.aim else "none")
+	# (나) 자개장을 열지 않고 보이는 물건만 분류 → 21 / 21, 다 닦으면 나갈 수 있고 자개함은 챙겨 간다
+	room = await _enter(1)
 	for it in room.items:
 		if not it.hidden and it.state != "gone":
 			room.sort_item(it, it.def.kind != "trash")
-	await _wait(0.5)
-	print("HIDDEN left=", room.hidden_left(), " place=", room.hidden_place(), " hud=", room.H_.o2.text, " say=", Game.say_label.text)
+	await _wait(0.3)
+	print("HIDDEN visible sorted hud=", room.H_.o2.text)
 	await _shot("hidden_hud")
 	Game.open_inventory()
 	await _wait(0.4)
 	await _shot("hidden_inventory")
 	Game.close_modal()
-	for en in room.envs:
-		if en.def.get("reveal", "") != "":
-			room.use_env(en)
-	await _wait(0.8)
-	room._update_hud()
-	print("HIDDEN after opening left=", room.hidden_left(), " hud=", room.H_.o2.text)
+	for st in room.stains:
+		st.done = true
+		st.progress = 1.0
+		room._stain_done(st)
+	await _wait(0.3)
+	print("HIDDEN complete=", room.complete)
+	room.try_exit()
+	await _wait(2.8)
+	print("HIDDEN after exit stage=", Game.stage, " kept_has_jbox=", Game.S.kept.has("jbox"), " sorted_jbox=", Game.S.sorted.get("jbox", ""))
+	# (다) 작업실: 챙겨 온 자개함의 숫자 자물쇠를 0314로 연다 (사진 뒷면 "3월 14일")
+	var ins = Game.world
+	var in_list := false
+	for d in ins._item_defs():
+		if d.id == "jbox":
+			in_list = true
+	ins.select("jbox")
+	await _wait(0.6)
+	for sp in ins.cur.m.spots:
+		if sp.def.get("action", "") == "combo":
+			ins._activate(sp)
+	await _wait(0.4)
+	for k in [KEY_0, KEY_3, KEY_1, KEY_4, KEY_ENTER]:
+		var ev := InputEventKey.new()
+		ev.physical_keycode = k
+		ev.keycode = k
+		ev.pressed = true
+		Game.modal_key_cb.call(ev)
+		await _wait(0.05)
+	await _wait(1.2)
+	print("HIDDEN workshop jbox_in_list=", in_list, " opened=", Game.S.opened.get("jbox", false), " got bank+letter=", Game.S.kept.has("bank2") and Game.S.kept.has("letter2"), " has_letter=", ins.has_letter())
 	get_tree().quit()
