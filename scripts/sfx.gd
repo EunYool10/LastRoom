@@ -9,10 +9,17 @@ var _loops := {}
 var volume := 0.8
 
 
+## 효과음(발소리 · 도구 · 종이)과 주변 소리(웅웅거림 · 파리)는 따로 조절한다
+const AMBIENT := ["amb", "hum", "flies"]
+
+
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	_bus("Effects")
+	_bus("Ambience")
 	for i in range(14):
 		var p := AudioStreamPlayer.new()
+		p.bus = "Effects"
 		add_child(p)
 		_players.append(p)
 	for n in LOOPS:
@@ -23,8 +30,26 @@ func _ready() -> void:
 		var p := AudioStreamPlayer.new()
 		p.stream = s
 		p.volume_db = -80.0
+		p.bus = "Ambience" if n in AMBIENT else "Effects"
 		add_child(p)
 		_loops[n] = {"p": p, "level": 0.0, "target": 0.0}
+
+
+func _bus(n: String) -> int:
+	var i := AudioServer.get_bus_index(n)
+	if i == -1:
+		AudioServer.add_bus()
+		i = AudioServer.bus_count - 1
+		AudioServer.set_bus_name(i, n)
+		AudioServer.set_bus_send(i, "Master")
+	return i
+
+
+func set_bus(n: String, v: float) -> void:
+	var i := _bus(n)
+	v = clamp(v, 0.0, 1.0)
+	AudioServer.set_bus_volume_db(i, linear_to_db(max(0.0001, v)))
+	AudioServer.set_bus_mute(i, v <= 0.001)
 
 
 func _stream(n: String) -> AudioStream:

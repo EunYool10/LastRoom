@@ -122,6 +122,8 @@ func _build_env() -> void:
 	e.adjustment_saturation = 0.82
 	e.adjustment_contrast = 1.08
 	e.adjustment_brightness = float(Game.settings.get("bright", 1.0))
+	e.set_meta("vfog", true)
+	Game.apply_quality_env(e)
 	world_env = WorldEnvironment.new()
 	world_env.environment = e
 	add_child(world_env)
@@ -299,7 +301,7 @@ func _build_player() -> void:
 	head.position.y = eye
 	player.add_child(head)
 	cam = Camera3D.new()
-	cam.fov = 72.0
+	cam.fov = 72.0 if preview else float(Game.settings.get("fov", 72.0))
 	cam.near = 0.03
 	cam.far = 40.0
 	head.add_child(cam)
@@ -310,7 +312,7 @@ func _build_player() -> void:
 	flash.spot_range = 9.0
 	flash.spot_angle = 27.0
 	flash.spot_angle_attenuation = 1.6
-	flash.shadow_enabled = true
+	flash.shadow_enabled = Game.settings.get("quality", "high") != "low"
 	flash.light_volumetric_fog_energy = 1.2
 	flash.position = Vector3(0.06, -0.05, 0)
 	cam.add_child(flash)
@@ -584,7 +586,10 @@ func _update_prompt() -> void:
 			"env":
 				if aim.dist < 2.4:
 					n = aim.obj.def.name
-					h = "집기 버튼으로 조사하기" if Game.touch else "E  조사하기"
+					var act := "조사하기"
+					if aim.obj.used and aim.obj.def.has("anim"):
+						act = "닫기" if aim.obj.get("open", true) else "열기"
+					h = ("집기 버튼으로 " + act) if Game.touch else ("E  " + act)
 			"door":
 				if aim.dist < 2.6:
 					n = "현관문"
@@ -646,6 +651,10 @@ func _unhandled_input(event: InputEvent) -> void:
 					card_action("cancel")
 			KEY_F: toggle_flash()
 			KEY_I, KEY_TAB: Game.open_inventory()
+			KEY_C, KEY_CTRL:
+				# 숙이기 '한 번씩': 누를 때마다 숙이기 · 일어서기 (웹은 Ctrl 대신 C)
+				if not Game.settings.get("crouch_hold", true) and (event.physical_keycode == KEY_C or not OS.has_feature("web")):
+					crouch_toggle = not crouch_toggle
 
 
 func look(rel: Vector2) -> void:
@@ -803,29 +812,45 @@ func kept_items() -> Array:
 	return out
 
 
-func trashed_count() -> int:
-	var n := 0
+func trashed_items() -> Array:
+	var out := []
 	for id in S.sorted:
-		if S.sorted[id] == "trash":
-			n += 1
-	return n
+		if S.sorted[id] != "trash":
+			continue
+		for it in items:
+			if it.def.id == id:
+				out.append(it)
+	return out
 
 
-## 보관함에서 꺼내 원래 자리로 돌려놓는다
+## 보관함이나 폐기 봉투에서 꺼내 원래 자리로 돌려놓는다
 func take_out(it) -> void:
-	if S.sorted.get(it.def.id, "") != "keep":
+	var was: String = S.sorted.get(it.def.id, "")
+	if was == "":
 		return
 	if it.has("tw") and it.tw.is_valid():
 		it.tw.kill()
 	S.sorted.erase(it.def.id)
-	S.kept.erase(it.def.id)
-	if it.def.kind == "trash":
-		S.err.kept_trash = max(0, S.err.kept_trash - 1)
+	if was == "keep":
+		S.kept.erase(it.def.id)
+		if it.def.kind == "trash":
+			S.err.kept_trash = max(0, S.err.kept_trash - 1)
+	elif it.def.kind == "keep":
+		S.err.lost_keep = max(0, S.err.lost_keep - 1)
 	it.root.transform = it.base
 	it.root.visible = true
 	it.hidden = false
 	it.state = "idle"
 	it.shape.disabled = false
+	# 서랍 · 문 안에서 나온 물건: 열려 있으면 열린 서랍 안으로, 닫혀 있으면 다시 열 때까지 가려 둔다
+	for en in envs:
+		if en.def.get("reveal", "") == it.def.id and en.def.has("anim") and en.used:
+			if en.get("open", true):
+				it.root.position += _reveal_offset(it)
+			else:
+				it.hidden = true
+				it.root.visible = false
+				it.shape.disabled = true
 	complete = false
 	_update_hud()
 
@@ -856,31 +881,33 @@ func _stain_done(st: Stain) -> void:
 
 func use_env(en) -> void:
 	var d: Dictionary = en.def
+	# 한 번 연 서랍 · 문은 다시 닫고 열 수 있다
+	if en.used and d.has("anim"):
+		_swing_env(en, not en.get("open", true))
+		return
 	Game.note(d.name, d.text)
 	Sfx.play("click", 0.6)
 	if d.has("clue"):
 		Game.add_clue(d.clue)
 	if not en.used:
 		if d.has("anim"):
-			Sfx.play("drawer", 0.8)
+			en.base = {}
 			for a in d.anim:
 				var o := find_child(a.name, true, false) as Node3D
-				if o == null:
-					continue
-				var tw := create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-				if a.has("move"):
-					tw.tween_property(o, "position", o.position + Vector3(a.move[0], a.move[1], a.move[2]), 0.7)
-				if a.has("rotY"):
-					tw.tween_property(o, "rotation:y", o.rotation.y + deg_to_rad(a.rotY), 0.8)
+				if o:
+					en.base[a.name] = [o.position, o.rotation.y]
+			_swing_env(en, true, true)
 		if d.has("reveal"):
 			for it in items:
 				if it.def.id == d.reveal:
 					get_tree().create_timer(0.4).timeout.connect(func():
+						if not en.get("open", true):
+							return
 						it.hidden = false
 						it.root.visible = true
 						it.shape.disabled = false
 						_update_hud())
-		if d.has("reveal") or d.has("anim"):
+		if d.has("reveal") and not d.has("anim"):
 			en.disabled = true
 			en.shape.disabled = true
 	if d.has("toggleLight"):
@@ -893,6 +920,61 @@ func use_env(en) -> void:
 					(ring.material_override as StandardMaterial3D).emission_energy_multiplier = 2.0 if L.on else 0.0
 		Sfx.play("switch", 0.7)
 	en.used = true
+
+
+## 서랍 · 문을 열거나 닫는다. 안에서 나온 물건을 아직 집지 않았으면 닫을 때 같이 가려진다
+func _swing_env(en, open: bool, first := false) -> void:
+	var d: Dictionary = en.def
+	en.open = open
+	Sfx.play("drawer", 0.8 if open else 0.6, 1.0 if open else 0.85)
+	for a in d.anim:
+		var o := find_child(a.name, true, false) as Node3D
+		if o == null or not en.base.has(a.name):
+			continue
+		var b: Array = en.base[a.name]
+		var tw := create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+		if a.has("move"):
+			tw.tween_property(o, "position", b[0] + (Vector3(a.move[0], a.move[1], a.move[2]) if open else Vector3.ZERO), 0.7 if open else 0.5)
+		if a.has("rotY"):
+			tw.tween_property(o, "rotation:y", b[1] + (deg_to_rad(a.rotY) if open else 0.0), 0.8 if open else 0.6)
+	# 서랍 안에서 나온 물건은 아직 집지 않았으면 서랍과 함께 나오고 들어간다
+	if d.has("reveal"):
+		for it in items:
+			if it.def.id == d.reveal and it.state == "idle" and S.sorted.get(it.def.id, "") == "":
+				create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT).tween_property(it.root, "position", it.base.origin + _reveal_offset(it, open), 0.7 if open else 0.5)
+	if first:
+		return
+	Game.note(d.name, "다시 열었다." if open else "닫았다.")
+	if d.has("reveal"):
+		for it in items:
+			if it.def.id == d.reveal and it.state == "idle" and S.sorted.get(it.def.id, "") == "":
+				it.hidden = not open
+				it.shape.disabled = not open
+				if open:
+					get_tree().create_timer(0.35).timeout.connect(func(): it.root.visible = not it.hidden)
+				else:
+					it.root.visible = false
+
+
+## 서랍에서 나온 물건이 서랍과 함께 움직인 거리 (열린 서랍의 앞으로 빠진 만큼)
+func _reveal_offset(it, open := true) -> Vector3:
+	if not open:
+		return Vector3.ZERO
+	for en in envs:
+		if en.def.get("reveal", "") == it.def.id and en.def.has("anim"):
+			for a in en.def.anim:
+				if a.has("move"):
+					return Vector3(a.move[0], a.move[1], a.move[2]).rotated(Vector3.UP, _furn_rot(a.name))
+	return Vector3.ZERO
+
+
+## 움직이는 가구 부품이 놓인 가구의 방향 (서랍이 앞으로 빠지는 방향을 방 좌표로 바꿀 때)
+func _furn_rot(part: String) -> float:
+	var o := find_child(part, true, false) as Node3D
+	if o == null or o.get_parent() == null:
+		return 0.0
+	var p := o.get_parent() as Node3D
+	return p.global_rotation.y if p else 0.0
 
 
 func try_exit() -> void:
@@ -945,7 +1027,8 @@ func _physics_process(dt: float) -> void:
 	player.rotation.y = yaw
 	head.rotation.x = pitch
 	var b := player.global_transform.basis
-	var want_crouch := crouch_toggle or Input.is_physical_key_pressed(KEY_C) or (not OS.has_feature("web") and Input.is_physical_key_pressed(KEY_CTRL))
+	var hold_key := Input.is_physical_key_pressed(KEY_C) or (not OS.has_feature("web") and Input.is_physical_key_pressed(KEY_CTRL))
+	var want_crouch: bool = crouch_toggle or (Game.settings.get("crouch_hold", true) and hold_key)
 	crouch = move_toward(crouch, 1.0 if want_crouch else 0.0, dt * 5.0)
 	var target := (-b.z * inp.y + b.x * inp.x) * 1.7 * (1.0 - 0.45 * crouch)
 	target.y = 0
@@ -1026,6 +1109,13 @@ func _raycast() -> void:
 	_stain_target()
 	if hit.is_empty():
 		return
+	# 가구는 겉모양을 감싼 상자로 막는다. 이불 위 다이어리처럼 그 상자에 살짝 묻힌 물건도
+	# 겨눈 곳 바로 뒤(8cm 안)에 있으면 집을 수 있다
+	if not hit.collider.has_meta("ref"):
+		var q2 := PhysicsRayQueryParameters3D.create(from, to, L_ITEM)
+		var h2 := get_world_3d().direct_space_state.intersect_ray(q2)
+		if not h2.is_empty() and from.distance_to(h2.position) - from.distance_to(hit.position) < 0.08:
+			hit = h2
 	var col: Object = hit.collider
 	var dist := from.distance_to(hit.position)
 	if col.has_meta("ref"):
@@ -1089,12 +1179,17 @@ func _update_flies(dt: float) -> void:
 
 
 func _update_lights() -> void:
+	# 깜빡임 줄이기: 깜빡이던 전등 · 손전등을 고르게 켠다
+	var calm: bool = Game.settings.get("calm", false)
 	for L in lights:
 		if L.flicker and L.on:
-			var f := sin(t * 13.0) + sin(t * 31.7) + sin(t * 3.3)
-			L.light.light_energy = 0.0 if f > 2.1 else L.base * (0.2 if randf() < 0.02 else 1.0)
+			if calm:
+				L.light.light_energy = L.base * 0.85
+			else:
+				var f := sin(t * 13.0) + sin(t * 31.7) + sin(t * 3.3)
+				L.light.light_energy = 0.0 if f > 2.1 else L.base * (0.2 if randf() < 0.02 else 1.0)
 	if flash_on:
-		flash.light_energy = 3.2 * (0.3 if randf() < 0.004 else 1.0)
+		flash.light_energy = 3.2 * (0.3 if randf() < 0.004 and not calm else 1.0)
 
 
 func _update_tools(dt: float) -> void:

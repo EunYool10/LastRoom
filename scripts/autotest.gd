@@ -642,39 +642,294 @@ func _btns(text: String) -> Array:
 	return out_b
 
 
+func _choice(text: String) -> Button:
+	for b in Game.modal_root.find_children("*", "Button", true, false):
+		if b.visible and b.text == text:
+			return b
+	return null
+
+
+## 설정 다섯 쪽 · 기록 백업 코드 · 기록 파일 검사 (--settingstest)
 func settings_test(o: String) -> void:
 	out = o
 	DirAccess.make_dir_recursive_absolute(out)
 	await _wait(1.0)
-	Game.open_settings()
-	await _wait(0.4)
-	await _shot("settings")
-	var offs := _btns("끄기")
-	var bob_off: Button = offs[1] if not Game.touch else offs[0]
-	bob_off.pressed.emit()
-	_btns("+")[0].pressed.emit()
+	for i in 5:
+		Game.open_settings(i)
+		await _wait(0.4)
+		await _shot("settings_%d" % i)
+	Game.open_settings(0)
+	await _wait(0.2)
+	_choice("낮음").pressed.emit()
+	await _wait(0.2)
+	print("SET quality=", Game.settings.quality, " scale=", get_viewport().scaling_3d_scale)
+	await _shot("settings_quality_low")
+	for r in Game.modal_root.find_children("*", "", true, false):
+		if r is Ui.InkRuler and r.hi == 90.0:
+			r.set_value(84.0)
+	print("SET fov=", Game.settings.fov)
+	Game._settings_reset()
+	await _wait(0.2)
+	print("SET after reset quality=", Game.settings.quality, " fov=", Game.settings.fov, " bright=", Game.settings.bright)
+	# 백업 코드: 만들고 → 읽고 → 한 글자 바꾸면 거절
+	Game.save.done = {"ep1": {"grade": "A", "score": 80, "choice": "deliver", "best": 80}, "ep4": {"grade": "S", "score": 95, "choice": "burn", "best": 95}}
+	var code: String = Game._backup_code()
+	var back: Dictionary = Game._backup_read(code)
+	var bad: Dictionary = Game._backup_read(code.substr(0, 20) + ("A" if code[20] != "A" else "B") + code.substr(21))
+	print("SET backup len=", code.length(), " ok=", back.get("done", {}).size() == 2, " tampered_rejected=", bad.is_empty())
+	# 망가진 설정 값은 기본값으로
+	var cs: Dictionary = Game._clean_settings({"sens": "fast", "volume": 7.0, "quality": "ultra", "bob": 1, "fov": 40})
+	print("SET clean sens=", cs.sens, " volume=", cs.volume, " quality=", cs.quality, " bob=", cs.bob, " fov=", cs.fov)
+	# 4장 열림: 3장 기록 없이 4장을 끝낸 기록
+	Game.show_title()
 	await _wait(0.3)
-	print("SET bob=", Game.settings.bob, " bright=", Game.settings.bright)
-	await _shot("settings_changed")
-	for b in Game.modal_root.find_children("*", "Button", true, false):
-		if b.text == "기본값으로":
-			b.pressed.emit()
-			break
+	print("SET unlocked ch3=", Game._unlocked(2), " ch4=", Game._unlocked(3), " ch5=", Game._unlocked(4))
+	await _shot("title_unlock")
+	Game.open_settings(3)
+	await _wait(0.2)
+	Game._backup_show()
 	await _wait(0.3)
-	print("SET after reset bob=", Game.settings.bob, " bright=", Game.settings.bright)
+	await _shot("backup_code")
 	Game.close_modal()
-	var d := {"version": "9.9.9", "notes": ["시험용 알림"], "windows": "http://127.0.0.1:8767/LastRoom-Setup-1.2.0.exe", "page": "https://eunyool10.github.io/LastRoom/"}
+	await _wait(0.2)
+	Game.open_help()
+	await _wait(0.3)
+	await _shot("help")
+	Game.close_modal()
+	var d := {"version": "9.9.9", "notes": ["시험용 알림"], "windows": "https://github.com/EunYool10/LastRoom/releases/download/v9.9.9/LastRoom-Setup-9.9.9.exe", "page": "https://eunyool10.github.io/LastRoom/"}
 	Game._show_update(d)
 	await _wait(0.4)
 	await _shot("update_notice")
-	if not Game.touch:
-		Game._do_update(d, "windows")
-		for i in range(120):
+	get_tree().quit()
+
+
+## 새 버전 받기: 확인값이 맞을 때만 실행 (--updatetest, 127.0.0.1:8767 에 시험 파일)
+func update_test(o: String) -> void:
+	out = o
+	await _wait(0.8)
+	var url := "http://127.0.0.1:8767/dummy.exe"
+	var good := FileAccess.get_sha256(out.path_join("dummy.exe"))
+	for case in [["good", good], ["bad", "0".repeat(64)]]:
+		var d := {"version": "9.9.%d" % (1 if case[0] == "good" else 2), "windows": url, "sha256": {"windows": case[1]}}
+		print("UPD case ", case[0])
+		Game._download_installer(d)
+		for i in range(80):
 			await _wait(0.25)
 			if not is_instance_valid(Game._upd_dl):
 				break
-		await _wait(1.6)
-		await _shot("update_done")
+		await _wait(1.2)
+		Game.close_modal()
+	print("UPD outside url:")
+	Game._download_installer({"version": "9.9.3", "windows": "https://example.com/x.exe", "sha256": {"windows": good}})
+	print("UPD no hash:")
+	Game._download_installer({"version": "9.9.4", "windows": url})
+	await _wait(0.3)
+	get_tree().quit()
+
+
+## 보관함 · 폐기 봉투 꺼내기 · 서랍 다시 닫기 (--invtest)
+func inv_test(o: String) -> void:
+	out = o
+	DirAccess.make_dir_recursive_absolute(out)
+	await _wait(0.8)
+	Game.show_brief(Game.EPISODES[0])
+	await _wait(0.3)
+	Game.enter_room()
+	for i in range(80):
+		if Game.pause_root.visible:
+			break
+		await _wait(0.1)
+	Game.hide_pause()
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	await _wait(0.6)
+	var room = Game.world
+	var keeps := []
+	var trashes := []
+	for it in room.items:
+		if it.hidden:
+			continue
+		if it.def.kind == "trash" and trashes.size() < 3:
+			trashes.append(it)
+		elif it.def.kind == "keep" and keeps.size() < 3:
+			keeps.append(it)
+	room.sort_item(keeps[0], true)
+	room.sort_item(trashes[0], true)
+	room.sort_item(keeps[1], false)
+	room.sort_item(trashes[1], false)
+	room.sort_item(trashes[2], false)
+	await _wait(0.6)
+	print("INV kept=", room.kept_items().size(), " bag=", room.trashed_items().size(), " err=", Game.S.err)
+	Game.open_inventory()
+	await _wait(0.4)
+	await _shot("inventory")
+	Game.inv_sel = keeps[1].def.id
+	Game.open_inventory(true)
+	await _wait(0.3)
+	await _shot("inventory_bag_selected")
+	room.take_out(keeps[1])
+	print("INV after bag take_out err=", Game.S.err, " state=", keeps[1].state, " visible=", keeps[1].root.visible)
+	Game.close_modal()
+	await _wait(0.3)
+	Game.open_inventory()
+	await _wait(0.2)
+	Game.close_modal()
+	# 서랍: 열기 → 닫기 → 다시 열기
+	var dr = null
+	for en in room.envs:
+		if en.def.id == "drawer":
+			dr = en
+	var node: Node3D = room.find_child("deskDrawer", true, false)
+	var z0: float = node.position.z
+	room.use_env(dr)
+	await _wait(1.0)
+	var z1: float = node.position.z
+	var letter = null
+	for it in room.items:
+		if it.def.id == dr.def.reveal:
+			letter = it
+	var shown1: bool = letter.root.visible
+	room.use_env(dr)
+	await _wait(1.0)
+	var z2: float = node.position.z
+	var shown2: bool = letter.root.visible
+	room.use_env(dr)
+	await _wait(1.0)
+	print("INV drawer z %.2f -> open %.2f -> closed %.2f -> open %.2f; letter shown %s / closed %s / reopen %s; shape_on=%s" % [z0, z1, z2, node.position.z, shown1, shown2, letter.root.visible, not dr.shape.disabled])
+	await _face(room, Vector3(dr.def.pos[0], dr.def.pos[1], dr.def.pos[2]), 1.0)
+	await _wait(0.3)
+	await _shot("drawer_open")
+	get_tree().quit()
+
+
+## 인트로 (--introtest)
+func intro_test(o: String) -> void:
+	out = o
+	DirAccess.make_dir_recursive_absolute(out)
+	for i in 6:
+		await _wait(0.8)
+		await _shot("intro_%d" % i)
+	await _wait(2.6)
+	await _shot("intro_cover_text")
+	await _key(KEY_SPACE)
+	await _wait(1.4)
+	print("INTRO stage=", Game.stage)
+	await _shot("intro_after")
+	get_tree().quit()
+
+
+## 3장 다이어리 · 2장 난로 살펴보기 (--looktest)
+func look_test(o: String) -> void:
+	out = o
+	DirAccess.make_dir_recursive_absolute(out)
+	await _wait(0.8)
+	# 2장 연탄난로
+	Game.show_brief(Game.EPISODES[1])
+	await _wait(0.3)
+	Game.enter_room()
+	for i in range(80):
+		if Game.pause_root.visible:
+			break
+		await _wait(0.1)
+	Game.hide_pause()
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	await _wait(0.6)
+	var room = Game.world
+	await _face(room, Vector3(1.45, 0.4, -1.2), 1.3)
+	await _wait(0.5)
+	await _shot("ch2_stove")
+	room.player.position = Vector3(0.2, 0, 0.6)
+	room.yaw = atan2(-(1.45 - 0.2), -(-1.2 - 0.6))
+	room.pitch = -0.25
+	await _wait(0.5)
+	await _shot("ch2_stove_far")
+	# 3장 다이어리: 조사 단계에서 앞면 누르기
+	Game.show_brief(Game.EPISODES[2])
+	await _wait(0.3)
+	Game.enter_room()
+	for i in range(80):
+		if Game.pause_root.visible:
+			break
+		await _wait(0.1)
+	Game.hide_pause()
+	await _wait(0.5)
+	room = Game.world
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	await _face(room, Vector3(1.0, 0.85, 1.5), 1.2)
+	await _wait(0.5)
+	await _shot("ch3_kitchen")
+	for it in room.items:
+		if it.state != "gone":
+			room.sort_item(it, it.def.kind != "trash")
+	for s2 in room.stains:
+		s2.done = true
+		s2.progress = 1.0
+	room.complete = true
+	room.try_exit()
+	await _wait(2.6)
+	var ins = Game.world
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	ins.select("diary")
+	await _wait(1.0)
+	await _shot("ch3_diary")
+	print("LOOK read button visible=", ins.U.read.visible, " text=", ins.U.read.text)
+	ins.U.read.pressed.emit()
+	await _wait(0.4)
+	print("LOOK read button modal=", Game.modal_open)
+	await _shot("ch3_diary_read")
+	Game.close_modal()
+	await _wait(0.2)
+	for sp in ins.cur.m.spots:
+		var c: Vector3 = sp.body.global_position
+		var sc: Vector2 = ins.cam.unproject_position(c)
+		var picked = ins._pick(sc)
+		print("LOOK diary spot ", sp.name, " screen=", sc, " pick=", picked.name if picked != null else "none", " facing=", ins.cam.global_position.direction_to(c).dot(-(sp.body.global_transform.basis * Vector3.UP).normalized()))
+		if sp.name == "front":
+			var e := InputEventMouseButton.new()
+			e.button_index = MOUSE_BUTTON_LEFT
+			e.position = _wp(sc)
+			e.global_position = e.position
+			e.pressed = true
+			Input.parse_input_event(e)
+			await get_tree().process_frame
+			var r := InputEventMouseButton.new()
+			r.button_index = MOUSE_BUTTON_LEFT
+			r.position = _wp(sc)
+			r.global_position = r.position
+			r.pressed = false
+			Input.parse_input_event(r)
+			await _wait(0.5)
+			print("LOOK diary click modal=", Game.modal_open)
+			await _shot("ch3_diary_click")
+			Game.close_modal()
+			await _wait(0.2)
+	# 메이크업 박스 이중 바닥: 열기 → 닫기 → 열기
+	ins.select("mkbox")
+	await _wait(0.6)
+	for sp in ins.cur.m.spots:
+		if sp.name == "bottom":
+			ins._activate(sp)
+			await _wait(1.0)
+			var z1: float = ins.cur.m.res.drawer.position.z
+			ins._activate(sp)
+			await _wait(1.0)
+			var z2: float = ins.cur.m.res.drawer.position.z
+			ins._activate(sp)
+			await _wait(1.0)
+			print("LOOK false bottom z open %.2f closed %.2f reopen %.2f" % [z1, z2, ins.cur.m.res.drawer.position.z])
+	# 4장 싱크대
+	Game.show_brief(Game.EPISODES[3])
+	await _wait(0.3)
+	Game.enter_room()
+	for i in range(80):
+		if Game.pause_root.visible:
+			break
+		await _wait(0.1)
+	Game.hide_pause()
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	await _wait(0.5)
+	await _face(Game.world, Vector3(0.85, 0.83, 1.55), 1.1)
+	await _wait(0.5)
+	await _shot("ch4_sink")
 	get_tree().quit()
 
 
@@ -787,10 +1042,85 @@ func terms_test(o: String) -> void:
 	print("TERMS saved=", Game.save.get("terms_ok", ""), " modal=", Game.modal_open)
 	Game.save.erase("terms_ok")
 	Game.write_save()
-	Game.open_settings()
+	Game.open_settings(4)
 	await _wait(0.3)
-	for sc in Game.modal_root.find_children("*", "ScrollContainer", true, false):
-		sc.scroll_vertical = 10000
-	await _wait(0.3)
-	await _shot("settings_bottom")
+	await _shot("settings_info")
+	get_tree().quit()
+
+
+## 물건마다 서서 · 숙여서 손이 닿는 자리에서 겨눌 수 있는지 (--reachtest, --ep=-1 이면 모든 장)
+func reach_test(ei: int) -> void:
+	await _wait(0.8)
+	var eps: Array = [ei] if ei >= 0 else range(Game.EPISODES.size())
+	for e in eps:
+		Game.show_brief(Game.EPISODES[e])
+		await _wait(0.2)
+		Game.enter_room()
+		for i in range(80):
+			if Game.pause_root.visible:
+				break
+			await _wait(0.1)
+		Game.hide_pause()
+		await _wait(0.4)
+		var room = Game.world
+		for en in room.envs:
+			if en.def.has("reveal"):
+				room.use_env(en)
+		await _wait(0.8)
+		var space: PhysicsDirectSpaceState3D = room.get_world_3d().direct_space_state
+		var cap := CapsuleShape3D.new()
+		cap.radius = 0.27
+		cap.height = 1.5
+		var bodies := []
+		for it in room.items:
+			bodies.append(it.body.get_rid())
+		var bad := []
+		for it in room.items:
+			if it.hidden or it.state != "idle":
+				continue
+			var c: Vector3 = it.shape.global_position
+			var half: Vector3 = (it.shape.shape as BoxShape3D).size * 0.35
+			var targets := [c]
+			for sx in [-1, 1]:
+				for sy in [-1, 1]:
+					for sz in [-1, 1]:
+						targets.append(it.shape.global_transform * Vector3(sx * half.x, sy * half.y, sz * half.z))
+			var ex: Array[RID] = []
+			for r in bodies:
+				if r != it.body.get_rid():
+					ex.append(r)
+			var ok := false
+			var x: float = -room.W / 2 + 0.28
+			while x < room.W / 2 - 0.27 and not ok:
+				var z: float = -room.D / 2 + 0.28
+				while z < room.D / 2 - 0.27 and not ok:
+					if Vector2(x - c.x, z - c.z).length() < 2.3:
+						var qs := PhysicsShapeQueryParameters3D.new()
+						qs.shape = cap
+						qs.transform = Transform3D(Basis(), Vector3(x, 0.86, z))
+						qs.collision_mask = 1
+						if space.intersect_shape(qs, 1).is_empty():
+							for eye in [room.eye, max(0.85, room.eye - 0.62)]:
+								for tg in targets:
+									var from := Vector3(x, eye, z)
+									var to: Vector3 = from + (tg - from).normalized() * 3.2
+									var q := PhysicsRayQueryParameters3D.create(from, to, 1 | 2 | 4 | 16)
+									q.exclude = ex
+									var hit := space.intersect_ray(q)
+									if not hit.is_empty() and hit.collider != it.body and not hit.collider.has_meta("ref"):
+										var q2 := PhysicsRayQueryParameters3D.create(from, to, 2)
+										q2.exclude = ex
+										var h2 := space.intersect_ray(q2)
+										if not h2.is_empty() and from.distance_to(h2.position) - from.distance_to(hit.position) < 0.08:
+											hit = h2
+									if not hit.is_empty() and hit.collider == it.body and from.distance_to(hit.position) < 2.4:
+										ok = true
+										break
+								if ok:
+									break
+					z += 0.15
+				x += 0.15
+			if not ok:
+				bad.append("%s %s (%.2f, %.2f, %.2f)" % [it.def.id, it.def.name, c.x, c.y, c.z])
+		print("REACH ", Game.EPISODES[e].id, " items=", room.items.size(), " unreachable=", bad)
 	get_tree().quit()

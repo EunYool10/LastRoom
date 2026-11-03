@@ -2,6 +2,7 @@
 // 사용: node site/build.mjs
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..');
 const web = path.join(root, 'build', 'web');
@@ -10,7 +11,21 @@ const out = path.join(root, 'build', 'site');
 fs.rmSync(out, { recursive: true, force: true });
 fs.mkdirSync(path.join(out, 'play'), { recursive: true });
 for (const f of fs.readdirSync(web)) if (!f.endsWith('.import')) fs.copyFileSync(path.join(web, f), path.join(out, 'play', f));
-fs.copyFileSync(path.join(root, 'site', 'index.html'), path.join(out, 'index.html'));
+// 내려받기 페이지: 파일 확인값(SHA-256)을 넣고, 페이지 안 스크립트만 실행되도록 보안 정책(CSP)을 붙인다
+const V = JSON.parse(fs.readFileSync(path.join(root, 'site', 'version.json'), 'utf8'));
+const sumRows = Object.entries(V.sha256 || {}).map(([k, v]) => [decodeURIComponent(String(V[k] || '').split('/').pop()), v]).filter(([n]) => n);
+const sums = sumRows.length ? `<details class="sums">
+      <summary>파일 확인값 (SHA-256)</summary>
+      <p>받은 파일이 원본과 같은지 확인할 수 있습니다. Windows에서는 PowerShell에 <code>Get-FileHash 파일이름</code>을 넣어 아래 값과 비교합니다.</p>
+      <dl>
+${sumRows.map(([n, v]) => `        <dt>${n}</dt><dd>${v}</dd>`).join('\n')}
+      </dl>
+    </details>` : '';
+let ih = fs.readFileSync(path.join(root, 'site', 'index.html'), 'utf8').replace('<!--SHA256-->', sums);
+const hashes = [...ih.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => "'sha256-" + crypto.createHash('sha256').update(m[1]).digest('base64') + "'");
+const csp = (scripts) => `<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src ${scripts}; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'">`;
+ih = ih.replace('<meta charset="UTF-8">', '<meta charset="UTF-8">\n' + csp(hashes.join(' ') || "'none'"));
+fs.writeFileSync(path.join(out, 'index.html'), ih);
 fs.cpSync(path.join(root, 'site', 'img'), path.join(out, 'img'), { recursive: true });
 fs.copyFileSync(path.join(root, 'assets', 'tex', 'icon.png'), path.join(out, 'icon.png'));
 fs.writeFileSync(path.join(out, '.nojekyll'), '');
@@ -19,11 +34,14 @@ fs.copyFileSync(path.join(root, 'site', 'version.json'), path.join(out, 'version
 // 이용 안내 및 약관: 게임 · 설치 프로그램과 같은 글(data/terms.json)
 const T = JSON.parse(fs.readFileSync(path.join(root, 'data', 'terms.json'), 'utf8'));
 const esc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-const link = (t) => esc(t).replace(/https:\/\/[^\s]+/g, (u) => `<a href="${u}">${u}</a>`);
+const link = (t) => esc(t)
+  .replace(/https:\/\/[^\s]+/g, (u) => `<a href="${u}">${u}</a>`)
+  .replace(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, (m) => `<a href="mailto:${m}">${m}</a>`);
 const termsHtml = `<!DOCTYPE html>
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
+${csp("'none'")}
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#14110f">
 <title>마지막 방 — ${esc(T.subtitle)}</title>

@@ -5,7 +5,8 @@ const RoomScript := preload("res://scripts/room.gd")
 const InspectScript := preload("res://scripts/inspect.gd")
 const BoardScript := preload("res://scripts/board.gd")
 const SAVE_PATH := "user://save.json"
-const VERSION := "1.2.1"
+const VERSION := "1.3.0"
+const CONTACT := "eunyool100208@gmail.com"
 
 var EPISODES: Array = []
 var FINAL_TEXT: Array = []
@@ -14,8 +15,12 @@ var TERMS: Dictionary = {}
 var ep: Dictionary = {}
 var S: Dictionary = {}
 var save := {}
-const DEFAULT_SETTINGS := {"sens": 1.0, "volume": 0.8, "fullscreen": false, "bright": 1.0, "bob": true, "breath": true, "invert": false, "pad": 1.0, "autoupdate": true}
+const DEFAULT_SETTINGS := {"sens": 1.0, "volume": 0.8, "sfx": 1.0, "amb": 1.0, "fullscreen": false, "bright": 1.0, "fov": 72.0, "quality": "high", "bob": true, "calm": false, "breath": true, "invert": false, "pad": 1.0, "crouch_hold": true, "bg_mute": false, "autoupdate": true}
+## 기록 파일 · 백업 코드에서 읽은 값이 이 범위 · 보기를 벗어나면 기본값을 쓴다
+const SETTING_RANGE := {"sens": [0.3, 2.5], "volume": [0.0, 1.0], "sfx": [0.0, 1.0], "amb": [0.0, 1.0], "bright": [0.6, 1.6], "fov": [60.0, 90.0], "pad": [0.85, 1.2]}
+const SETTING_CHOICES := {"quality": ["low", "mid", "high"]}
 var settings: Dictionary = DEFAULT_SETTINGS.duplicate()
+var save_path := SAVE_PATH
 var testing := false
 var stage := ""
 var world: Node = null
@@ -37,6 +42,7 @@ var modal_root: Control
 var modal_center: CenterContainer
 var modal_close_cb: Callable = Callable()
 var modal_key_cb: Callable = Callable()
+var modal_locked := false
 var fade_rect: ColorRect
 var pause_root: Control
 
@@ -47,22 +53,30 @@ var note_timer := 0.0
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
-	touch = OS.has_feature("mobile") or OS.has_feature("web_android") or OS.has_feature("web_ios") 		or (OS.has_feature("web_macos") and DisplayServer.is_touchscreen_available()) or OS.get_cmdline_user_args().has("--touch")
-	Ui.init()
-	_load_data()
-	_load_save()
-	_build_layers()
-	var args := OS.get_cmdline_user_args()
+	# 점검용 실행 인자는 개발 중에만 받는다. 내보낸 게임은 무시한다
+	var args := OS.get_cmdline_user_args() if OS.is_debug_build() else PackedStringArray()
 	var test := ""
 	for a in args:
 		if a.begins_with("--autotest="):
 			test = a.substr(11)
 	testing = test != ""
+	if testing:
+		save_path = "user://save_test.json"
+	touch = OS.has_feature("mobile") or OS.has_feature("web_android") or OS.has_feature("web_ios") 		or (OS.has_feature("web_macos") and DisplayServer.is_touchscreen_available()) or args.has("--touch")
+	Ui.init()
+	_set_window_icon()
+	_load_data()
+	_load_save()
+	_build_layers()
 	if test == "":
 		_apply_settings()
+		_clean_update_dir()
 	else:
 		Sfx.set_master(0.0)
-	show_title()
+	if test == "" or args.has("--introtest"):
+		play_intro()
+	else:
+		show_title()
 	if test != "":
 		var at: Node = load("res://scripts/autotest.gd").new()
 		add_child(at)
@@ -72,6 +86,16 @@ func _ready() -> void:
 				ei = int(a.substr(5))
 		if args.has("--termstest"):
 			at.terms_test(test)
+		elif args.has("--invtest"):
+			at.inv_test(test)
+		elif args.has("--introtest"):
+			at.intro_test(test)
+		elif args.has("--looktest"):
+			at.look_test(test)
+		elif args.has("--updatetest"):
+			at.update_test(test)
+		elif args.has("--reachtest"):
+			at.reach_test(ei)
 		elif args.has("--cleantest"):
 			at.clean_test(test, ei)
 		elif args.has("--settingstest"):
@@ -111,28 +135,105 @@ func _load_data() -> void:
 
 func _load_save() -> void:
 	save = {"done": {}}
-	if FileAccess.file_exists(SAVE_PATH):
-		var f := FileAccess.open(SAVE_PATH, FileAccess.READ)
-		var d = JSON.parse_string(f.get_as_text())
-		if d is Dictionary:
-			save = d
-	if not save.has("done"):
-		save.done = {}
-	if save.has("settings"):
-		settings.merge(save.settings, true)
+	var tmp := save_path + ".tmp"
+	if not FileAccess.file_exists(save_path) and FileAccess.file_exists(tmp):
+		DirAccess.rename_absolute(tmp, save_path)
+	var d = _read_json(save_path)
+	if d == null and FileAccess.file_exists(save_path):
+		# 망가진 기록은 지우지 않고 따로 남기고, 바로 전에 저장한 기록으로 되살린다
+		DirAccess.copy_absolute(save_path, save_path.get_basename() + ".broken.json")
+		d = _read_json(_bak_path())
+	if d is Dictionary:
+		save = d
+	save.done = _clean_done(save.get("done", {}))
+	settings = _clean_settings(save.get("settings", {}))
+	for k in ["seen_notes", "terms_ok"]:
+		if save.has(k) and not (save[k] is String):
+			save.erase(k)
+
+
+func _bak_path() -> String:
+	return save_path.get_basename() + ".bak.json"
+
+
+static func _read_json(path: String):
+	if not FileAccess.file_exists(path):
+		return null
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null or f.get_length() > 1048576:
+		return null
+	var d = JSON.parse_string(f.get_as_text())
+	return d if d is Dictionary else null
 
 
 func write_save() -> void:
 	save.settings = settings
-	var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
-	if f:
-		f.store_string(JSON.stringify(save))
+	# 새 파일에 다 쓴 다음 바꿔 끼운다: 쓰는 도중에 꺼져도 앞 기록이 남는다
+	var tmp := save_path + ".tmp"
+	var f := FileAccess.open(tmp, FileAccess.WRITE)
+	if f == null:
+		return
+	f.store_string(JSON.stringify(save))
+	f.close()
+	if FileAccess.file_exists(save_path):
+		DirAccess.copy_absolute(save_path, _bak_path())
+	DirAccess.rename_absolute(tmp, save_path)
+
+
+static func _num(v, def: float) -> float:
+	return float(v) if (v is float or v is int) else def
+
+
+## 기록 파일 · 백업 코드의 설정: 아는 항목만, 알맞은 형식 · 범위로
+static func _clean_settings(s) -> Dictionary:
+	var out: Dictionary = DEFAULT_SETTINGS.duplicate()
+	if not (s is Dictionary):
+		return out
+	for k in DEFAULT_SETTINGS:
+		if not s.has(k):
+			continue
+		var v = s[k]
+		match typeof(DEFAULT_SETTINGS[k]):
+			TYPE_BOOL:
+				if v is bool:
+					out[k] = v
+			TYPE_FLOAT, TYPE_INT:
+				if v is float or v is int:
+					var lim: Array = SETTING_RANGE.get(k, [-1000000.0, 1000000.0])
+					out[k] = clamp(float(v), lim[0], lim[1])
+			TYPE_STRING:
+				if v is String and v in SETTING_CHOICES.get(k, []):
+					out[k] = v
+	return out
+
+
+## 끝낸 장 기록: 있는 장 이름 · 등급 · 점수만 남긴다
+func _clean_done(d) -> Dictionary:
+	var out := {}
+	if not (d is Dictionary):
+		return out
+	for E in EPISODES:
+		var r = d.get(E.id)
+		if not (r is Dictionary):
+			continue
+		var g := str(r.get("grade", "C"))
+		var score := int(clamp(_num(r.get("score"), 0.0), 0.0, 100.0))
+		out[E.id] = {"grade": g if g in ["S", "A", "B", "C"] else "C", "score": score, "choice": "burn" if str(r.get("choice", "")) == "burn" else "deliver", "best": int(clamp(_num(r.get("best"), score), 0.0, 100.0))}
+	return out
 
 
 func _apply_settings() -> void:
 	Sfx.set_master(float(settings.volume))
+	Sfx.set_bus("Effects", float(settings.sfx))
+	Sfx.set_bus("Ambience", float(settings.amb))
+	_apply_scale()
 	if not touch:
 		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN if settings.fullscreen else DisplayServer.WINDOW_MODE_MAXIMIZED)
+
+
+## 화질: 3D 화면을 그리는 해상도
+func _apply_scale() -> void:
+	get_viewport().scaling_3d_scale = {"low": 0.7, "mid": 0.85}.get(settings.get("quality", "high"), 1.0)
 
 
 # ───────────────────────────── 레이어
@@ -246,11 +347,120 @@ func fade(cb: Callable) -> void:
 	tw.tween_property(fade_rect, "color:a", 0.0, 0.5)
 
 
+# ───────────────────────────── 시작 인트로
+var _intro_tw: Tween
+
+
+## 켤 때 한 번: YOOL 제작 → 마지막 방 표지와 글 → 타이틀. 누르거나 키를 치면 바로 넘어간다
+func play_intro() -> void:
+	stage = "intro"
+	_set_world(null)
+	var root := _new_screen()
+	root.mouse_filter = Control.MOUSE_FILTER_STOP
+	var bg := ColorRect.new()
+	bg.color = Color("0b0a09")
+	Ui.full(bg)
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(bg)
+	var center := func(l: Label) -> Label:
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		return l
+	# 1) 만든 사람
+	var studio := Ui.vbox(16)
+	Ui.full(studio)
+	studio.alignment = BoxContainer.ALIGNMENT_CENTER
+	studio.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var wm := FontVariation.new()
+	wm.base_font = Ui.serif_b
+	wm.spacing_glyph = 24
+	studio.add_child(center.call(Ui.label("YOOL", 72, Color("efe9df"), wm)))
+	var bar := ColorRect.new()
+	bar.color = Color(1, 1, 1, 0.25)
+	bar.custom_minimum_size = Vector2(56, 1)
+	bar.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	studio.add_child(bar)
+	studio.add_child(center.call(Ui.label("제작", 17, Color("a39b8e"), Ui.spaced)))
+	studio.modulate.a = 0.0
+	root.add_child(studio)
+	# 2) 게임 표지
+	var cover := Ui.vbox(8)
+	Ui.full(cover)
+	cover.alignment = BoxContainer.ALIGNMENT_CENTER
+	cover.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var mark := Ui.DoorMark.new()
+	mark.custom_minimum_size = Vector2(150, 196)
+	mark.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	mark.glow = 0.0
+	mark.modulate.a = 0.0
+	cover.add_child(mark)
+	cover.add_child(Ui.gap(22))
+	var t1: Label = center.call(Ui.label("마지막 방", 80, Color("efe9df"), Ui.serif_b))
+	var t2: Label = center.call(Ui.label("특수청소부의 기록", 20, Color("a39b8e"), Ui.serif))
+	var t3: Label = center.call(Ui.label("누군가 마지막으로 머문 방을 치운다.\n남겨진 물건이 그 사람의 이야기를 대신 들려준다.", 17, Color(1, 1, 1, 0.55), Ui.serif))
+	t3.add_theme_constant_override("line_spacing", 6)
+	for l in [t1, t2, t3]:
+		l.modulate.a = 0.0
+	cover.add_child(t1)
+	cover.add_child(t2)
+	cover.add_child(Ui.gap(30))
+	cover.add_child(t3)
+	root.add_child(cover)
+	var skip := Ui.label("화면을 누르면 넘어간다" if touch else "아무 키나 누르면 넘어간다", 13, Color(1, 1, 1, 0.28), Ui.sans)
+	Ui.pin(skip, 1, 1, -30, -26, -1, -1)
+	root.add_child(skip)
+	root.gui_input.connect(func(e: InputEvent):
+		if e is InputEventMouseButton and e.pressed:
+			_intro_end())
+	var tw := create_tween()
+	_intro_tw = tw
+	tw.tween_interval(0.5)
+	tw.tween_property(studio, "modulate:a", 1.0, 0.9)
+	tw.tween_interval(1.3)
+	tw.tween_property(studio, "modulate:a", 0.0, 0.7)
+	tw.tween_interval(0.4)
+	tw.tween_property(mark, "modulate:a", 1.0, 0.9)
+	tw.tween_callback(func(): Sfx.play("flick", 0.45))
+	tw.tween_property(mark, "glow", 1.0, 0.5)
+	tw.tween_property(t1, "modulate:a", 1.0, 0.9)
+	tw.parallel().tween_property(t2, "modulate:a", 1.0, 1.3)
+	tw.tween_interval(0.4)
+	tw.tween_property(t3, "modulate:a", 1.0, 1.0)
+	tw.tween_interval(2.4)
+	tw.tween_callback(_intro_end)
+
+
+func _intro_end() -> void:
+	if stage != "intro":
+		return
+	stage = "intro_end"
+	if _intro_tw and _intro_tw.is_valid():
+		_intro_tw.kill()
+	fade(show_title)
+
+
+## 작업 표시줄 · 창 아이콘: 게임 안에 들어 있는 그림으로 직접 정한다
+func _set_window_icon() -> void:
+	if OS.has_feature("web") or OS.has_feature("mobile"):
+		return
+	var tex = load("res://assets/tex/icon.png")
+	if not (tex is Texture2D):
+		return
+	var img: Image = tex.get_image()
+	if img == null:
+		return
+	if img.is_compressed():
+		img.decompress()
+	img.convert(Image.FORMAT_RGBA8)
+	img.resize(64, 64, Image.INTERPOLATE_LANCZOS)
+	DisplayServer.set_icon(img)
+
+
 # ───────────────────────────── 타이틀
 func _unlocked(i: int) -> bool:
-	if OS.get_cmdline_user_args().has("--all"):
+	if OS.is_debug_build() and OS.get_cmdline_user_args().has("--all"):
 		return true
-	return i == 0 or save.done.has(EPISODES[i - 1].id)
+	# 앞 장을 마쳤거나, 이 장을 한 번이라도 끝냈으면 열린다
+	return i == 0 or save.done.has(EPISODES[i - 1].id) or save.done.has(EPISODES[i].id)
 
 
 func show_title() -> void:
@@ -519,7 +729,7 @@ func show_pause(first := false) -> void:
 	var cv := Ui.vbox(13)
 	cv.add_child(Ui.label("조작", 15, Ui.ACCENT, Ui.spaced))
 	cv.add_child(Ui.gap(2))
-	var rows := [[["W", "A", "S", "D"], "이동"], [["마우스"], "둘러보기"], [["1", "2", "3"], "손 · 소독 분무기 · 스크러버"], [["왼쪽 클릭 유지"], "도구 사용 · 스크러버는 누른 채 문지르기"], [["E"], "집어 보기 · 조사 · 보관함에 넣기"], [["Q"], "폐기"], [["X", "오른쪽 클릭"], "내려놓기"], [["F"], "손전등"], [["I", "Tab"], "보관함 열기"], [["C"] if OS.has_feature("web") else ["Ctrl"], "누르고 있는 동안 숙이기"]]
+	var rows := [[["W", "A", "S", "D"], "이동"], [["마우스"], "둘러보기"], [["1", "2", "3"], "손 · 소독 분무기 · 스크러버"], [["왼쪽 클릭 유지"], "도구 사용 · 스크러버는 누른 채 문지르기"], [["E"], "집어 보기 · 조사 · 보관함에 넣기"], [["Q"], "폐기"], [["X", "오른쪽 클릭"], "내려놓기"], [["F"], "손전등"], [["I", "Tab"], "보관함 열기"], [["C"] if OS.has_feature("web") else ["Ctrl"], "누르고 있는 동안 숙이기" if settings.get("crouch_hold", true) else "누를 때마다 숙이기 · 일어서기"]]
 	if touch:
 		rows = [[["왼쪽 화면 끌기"], "이동"], [["오른쪽 화면 끌기"], "둘러보기"], [["손", "분무기", "스크러버"], "도구 바꾸기"], [["집기 · 뿌리기"], "누르고 있으면 도구 사용"], [["보관", "폐기"], "들고 있는 물건 분류"], [["내려놓기"], "제자리에 두기"], [["손전등"], "손전등 켜고 끄기"], [["보관함"], "넣은 물건 보기 · 꺼내기"], [["숙이기"], "숙이기 · 일어서기"]]
 	for row in rows:
@@ -574,6 +784,11 @@ func _notification(what: int) -> void:
 		ev.keycode = KEY_ESCAPE
 		ev.pressed = true
 		Input.parse_input_event(ev)
+	elif what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		if settings.get("bg_mute", false) and not touch:
+			AudioServer.set_bus_mute(0, true)
+	elif what == NOTIFICATION_APPLICATION_FOCUS_IN:
+		AudioServer.set_bus_mute(0, Sfx.volume <= 0.001)
 
 
 func _unpause() -> void:
@@ -845,6 +1060,10 @@ func _process(dt: float) -> void:
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo:
+		if stage == "intro" and event.physical_keycode != KEY_F11:
+			_intro_end()
+			get_viewport().set_input_as_handled()
+			return
 		if event.physical_keycode == KEY_F11:
 			settings.fullscreen = not settings.fullscreen
 			_apply_settings()
@@ -852,8 +1071,12 @@ func _input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 			return
 		if modal_open:
+			# 글자 칸에 쓰는 중이면 키는 그 칸으로 보낸다 (Esc만 빼고)
+			if get_viewport().gui_get_focus_owner() is LineEdit and event.physical_keycode != KEY_ESCAPE:
+				return
 			if event.physical_keycode == KEY_ESCAPE:
-				close_modal()
+				if not modal_locked:
+					close_modal()
 			elif modal_key_cb.is_valid():
 				modal_key_cb.call(event)
 			get_viewport().set_input_as_handled()
@@ -939,69 +1162,106 @@ func show_credits() -> void:
 
 
 # ───────────────────────────── 보관함
-func open_inventory() -> void:
+var inv_sel := ""
+
+
+## 유품 보관함: 꼬리표를 고르면 오른쪽에 자세히 적히고, 꺼내면 처음 자리로 돌아간다
+func open_inventory(quiet := false) -> void:
 	if stage != "room" or world == null or not world.has_method("kept_items") or world.exiting:
 		return
-	Sfx.play("paper", 0.5)
+	if not quiet:
+		Sfx.play("paper", 0.5)
 	var kept: Array = world.kept_items()
+	var bag: Array = world.trashed_items()
+	var c: Dictionary = world._counts()
+	var all := kept + bag
+	if not all.any(func(x): return x.def.id == inv_sel):
+		inv_sel = all[0].def.id if all.size() > 0 else ""
 	var p := Ui.panel(Ui.paper_box(false, 40))
 	var v := Ui.vbox(10)
-	var head := Ui.hbox(0)
-	var hv := Ui.vbox(2)
+	# 머리: 상자 이름표와 숫자 세 칸
+	var head := Ui.hbox(22)
+	var hv := Ui.vbox(0)
 	hv.add_child(Ui.label("유품 보관함", 14, Ui.INK_DIM, Ui.spaced))
-	hv.add_child(Ui.label("%d장 · %s" % [int(ep.no), ep.place], 26, Ui.INK, Ui.serif_b))
+	hv.add_child(Ui.label("%d장 · %s" % [int(ep.no), ep.place], 28, Ui.INK, Ui.serif_b))
 	head.add_child(Ui.expand(hv))
-	var cnt := Ui.label("%d점" % kept.size(), 30, Ui.INK, Ui.serif_b)
-	cnt.size_flags_vertical = Control.SIZE_SHRINK_END
-	head.add_child(cnt)
+	for s in [["보관", kept.size()], ["폐기 봉투", bag.size()], ["남은 물건", c.total - c.sorted]]:
+		var sv := Ui.vbox(0)
+		sv.custom_minimum_size = Vector2(88, 0)
+		sv.size_flags_vertical = Control.SIZE_SHRINK_END
+		var nl := Ui.label(str(s[1]), 34, Ui.INK, Ui.serif_b)
+		nl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		sv.add_child(nl)
+		var ll := Ui.label(s[0], 13, Ui.INK_DIM, Ui.spaced)
+		ll.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		sv.add_child(ll)
+		head.add_child(sv)
 	v.add_child(head)
-	var line := ColorRect.new()
-	line.color = Color(Ui.INK, 0.35)
-	line.custom_minimum_size = Vector2(0, 2)
-	v.add_child(line)
-	if kept.is_empty():
-		var e := Ui.label("아직 넣은 물건이 없다.\n물건을 집어 들고 [보관]을 고르면 이 상자에 담긴다.", 17, Ui.INK_DIM, Ui.serif, true)
-		e.custom_minimum_size = Vector2(620, 0)
-		v.add_child(Ui.gap(6))
-		v.add_child(e)
-		v.add_child(Ui.gap(6))
-	else:
-		var list := Ui.vbox(0)
-		for i in kept.size():
-			var it = kept[i]
-			var row := Ui.hbox(16)
-			row.custom_minimum_size = Vector2(640, 0)
-			var no := Ui.label("%02d" % (i + 1), 15, Ui.INK_DIM, Ui.serif)
-			no.custom_minimum_size = Vector2(28, 0)
-			row.add_child(no)
-			var tv := Ui.vbox(1)
-			tv.add_child(Ui.label(it.def.name, 19, Ui.INK, Ui.serif_b))
-			var dl := Ui.label(it.def.get("desc", ""), 15, Ui.INK_DIM, Ui.sans, true)
-			dl.custom_minimum_size = Vector2(460, 0)
-			tv.add_child(dl)
-			row.add_child(Ui.expand(tv))
-			var out := Ui.ink_button("꺼내기", 17, func():
-				world.take_out(it)
-				Sfx.play("pick", 0.6)
-				toast("%s — 원래 자리에 돌려놓았다" % it.def.name)
-				open_inventory())
-			out.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-			row.add_child(out)
-			list.add_child(row)
-			var sep := ColorRect.new()
-			sep.color = Color(Ui.INK, 0.12)
-			sep.custom_minimum_size = Vector2(0, 1)
-			list.add_child(Ui.gap(8))
-			list.add_child(sep)
-			list.add_child(Ui.gap(8))
-		var sc := ScrollContainer.new()
-		sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-		sc.custom_minimum_size = Vector2(660, min(min(get_viewport().get_visible_rect().size.y * 0.5, 470.0), kept.size() * 66.0))
-		sc.add_child(list)
-		v.add_child(sc)
-	var foot := Ui.label("폐기 봉투 %d개   ·   꺼낸 물건은 처음 있던 자리로 돌아간다." % world.trashed_count(), 15, Ui.INK_DIM, Ui.sans)
+	v.add_child(Ui.rule(0.6, 2))
+	var body := Ui.hbox(26)
+	# 왼쪽: 꼬리표 (보관함 · 폐기 봉투)
+	var left := Ui.vbox(10)
+	var tags := {}
+	var detail := Ui.vbox(10)
+	detail.custom_minimum_size = Vector2(300, 0)
+	var pick := func(it) -> void:
+		inv_sel = it.def.id
+		for k in tags:
+			tags[k].set_on(k == inv_sel)
+		_inv_detail(detail, it)
+	for sec in [["보관함 — 유족에게 전할 물건", kept, false], ["폐기 봉투 — 버린 물건", bag, true]]:
+		left.add_child(Ui.label(sec[0], 16, Ui.INK, Ui.sans_b))
+		var list: Array = sec[1]
+		if list.is_empty():
+			var e := Ui.Dashed.new()
+			e.custom_minimum_size = Vector2(612, 0)
+			var msg := "버린 물건이 없다."
+			if not sec[2]:
+				msg = "아직 넣은 물건이 없다. 물건을 집어 들고 [보관]을 고르면 여기 담긴다." if touch else "아직 넣은 물건이 없다. 물건을 E로 집어 들고 보관함에 넣으면 여기 담긴다."
+			var el := Ui.label(msg, 15, Ui.INK_DIM, Ui.serif, true)
+			el.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			e.add_child(el)
+			left.add_child(e)
+		else:
+			var grid := GridContainer.new()
+			grid.columns = 3
+			grid.add_theme_constant_override("h_separation", 12)
+			grid.add_theme_constant_override("v_separation", 12)
+			for it in list:
+				var tb := Ui.TagButton.new(it.def.name, sec[2])
+				tb.set_on(it.def.id == inv_sel)
+				var item = it
+				tb.pressed.connect(func():
+					Sfx.play("paper", 0.25)
+					pick.call(item))
+				tags[it.def.id] = tb
+				grid.add_child(tb)
+			left.add_child(grid)
+		left.add_child(Ui.gap(6))
+	var sc := ScrollContainer.new()
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	sc.custom_minimum_size = Vector2(630, min(get_viewport().get_visible_rect().size.y * 0.55, 470.0))
+	sc.add_child(left)
+	body.add_child(sc)
+	body.add_child(Ui.vrule(0.2))
+	body.add_child(detail)
+	v.add_child(body)
+	var sel = null
+	for it in all:
+		if it.def.id == inv_sel:
+			sel = it
+	_inv_detail(detail, sel)
+	v.add_child(Ui.rule(0.15))
+	var foot := Ui.hbox(24)
+	var fl := Ui.label("꺼낸 물건은 처음 있던 자리로 돌아간다. 다시 집어서 분류하면 된다.", 14, Ui.INK_DIM, Ui.sans)
+	fl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	foot.add_child(Ui.expand(fl))
+	if not touch:
+		var kh := Ui.label("I · Tab  닫기", 13, Ui.INK_DIM, Ui.sans)
+		kh.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		foot.add_child(kh)
+	foot.add_child(Ui.ink_button("닫기", 21, func(): close_modal()))
 	v.add_child(foot)
-	v.add_child(_buttons_row([["닫기", func(): close_modal()]]))
 	p.add_child(v)
 	open_modal(p)
 	modal_key_cb = func(ev: InputEventKey):
@@ -1009,8 +1269,34 @@ func open_inventory() -> void:
 			close_modal()
 
 
+## 고른 꼬리표의 자세한 내용과 꺼내기
+func _inv_detail(box: VBoxContainer, it) -> void:
+	Ui.clear(box)
+	box.add_child(Ui.label("고른 물건", 14, Ui.INK_DIM, Ui.spaced))
+	if it == null:
+		var e := Ui.label("꼬리표를 고르면 여기에 적힌다.", 16, Ui.INK_DIM, Ui.serif, true)
+		e.custom_minimum_size = Vector2(300, 0)
+		box.add_child(e)
+		return
+	var nl := Ui.label(it.def.name, 26, Ui.INK, Ui.serif_b, true)
+	nl.custom_minimum_size = Vector2(300, 0)
+	box.add_child(nl)
+	var dl := Ui.label(it.def.get("desc", ""), 17, Ui.INK, Ui.serif, true)
+	dl.custom_minimum_size = Vector2(300, 0)
+	box.add_child(dl)
+	box.add_child(Ui.rule(0.15))
+	box.add_child(Ui.label("지금 폐기 봉투에 있다" if S.sorted.get(it.def.id, "") == "trash" else "지금 보관함에 있다", 14, Ui.INK_DIM, Ui.sans))
+	var b := Ui.form_button("꺼내서 제자리에 두기", 16, func():
+		world.take_out(it)
+		Sfx.play("pick", 0.6)
+		toast("%s — 원래 자리에 돌려놓았다" % it.def.name)
+		open_inventory(true))
+	b.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	box.add_child(b)
+
+
 # ───────────────────────────── 업데이트 노트
-func open_updates() -> void:
+func open_updates(back: Callable = Callable()) -> void:
 	var first_view: bool = save.get("seen_notes", "") != VERSION
 	save.seen_notes = VERSION
 	write_save()
@@ -1054,11 +1340,11 @@ func open_updates() -> void:
 	sc.add_child(list)
 	v.add_child(sc)
 	v.add_child(_buttons_row([["닫기", func():
-		close_modal()
 		if stage == "title":
-			show_title()]]))
+			show_title()
+		close_modal()]]))
 	p.add_child(v)
-	open_modal(p)
+	open_modal(p, back)
 
 
 # ───────────────────────────── 이용 안내 · 약관
@@ -1071,7 +1357,7 @@ func _needs_terms() -> bool:
 	return str(save.get("terms_ok", "")) != str(TERMS.get("version", ""))
 
 
-func open_terms(agree_cb: Callable = Callable()) -> void:
+func open_terms(agree_cb: Callable = Callable(), back: Callable = Callable()) -> void:
 	if TERMS.is_empty():
 		return
 	var p := Ui.panel(Ui.paper_box(false, 40))
@@ -1122,7 +1408,9 @@ func open_terms(agree_cb: Callable = Callable()) -> void:
 	else:
 		v.add_child(_buttons_row([["닫기", func(): close_modal()]]))
 	p.add_child(v)
-	open_modal(p)
+	open_modal(p, back)
+	# 처음 켤 때의 동의 화면은 Esc · 뒤로 가기로 닫히지 않는다
+	modal_locked = agree_cb.is_valid()
 
 
 # ───────────────────────────── 모달
@@ -1134,6 +1422,7 @@ func open_modal(content: Control, on_close: Callable = Callable()) -> void:
 	modal_open = true
 	modal_close_cb = on_close
 	modal_key_cb = Callable()
+	modal_locked = false
 	if stage == "room":
 		paused = true
 		get_tree().paused = true
@@ -1177,204 +1466,440 @@ func confirm(title: String, text: String, yes: String, cb: Callable, no := "그�
 	open_modal(p)
 
 
-func open_help() -> void:
-	var p := Ui.panel(Ui.dark_box(0.96, 36, 0.1))
-	var v := Ui.vbox(12)
-	v.add_child(Ui.label("조작법", 30, Ui.TEXT, Ui.serif_b))
+func open_help(back: Callable = Callable()) -> void:
+	var p := Ui.panel(Ui.paper_box(false, 40))
+	var v := Ui.vbox(10)
+	v.add_child(Ui.label("작업 안내서", 14, Ui.INK_DIM, Ui.spaced))
+	v.add_child(Ui.label("조작법", 30, Ui.INK, Ui.serif_b))
+	v.add_child(Ui.rule(0.6, 2))
 	var grid := GridContainer.new()
 	grid.columns = 2
-	grid.add_theme_constant_override("h_separation", 30)
+	grid.add_theme_constant_override("h_separation", 34)
 	grid.add_theme_constant_override("v_separation", 7)
-	var keys := [["1단계 · 현장 정리", ""], ["W A S D / 마우스", "이동 / 둘러보기"], ["1 · 2 · 3, 휠", "손 · 소독 분무기 · 스크러버"], ["왼쪽 버튼 누르고 있기", "도구 사용. 소독약을 먼저 뿌려야 잘 닦인다"], ["E / Q / X", "집어 보기 · 보관 / 폐기 / 내려놓기"], ["F", "손전등"], ["I / Tab", "보관함 열기 · 잘못 넣은 물건 다시 꺼내기"], ["C" if OS.has_feature("web") else "Ctrl", "누르고 있는 동안 숙이기 (낮은 곳 얼룩 · 물건)"], ["", ""], ["2단계 · 유품 조사", ""], ["끌기 / 휠", "돌려 보기 / 확대"], ["클릭", "수상한 곳 조사"], ["U / H / R", "UV 라이트 / 단서 위치 / 정면"], ["", ""], ["3단계 · 사건 재구성", ""], ["쪽지 · 보기 선택", "답과 근거 단서(최대 2장)를 고른다"], ["", ""], ["Esc / F11", "멈춤 / 전체 화면"]]
+	var crouch_txt := "누르고 있는 동안 숙이기 (낮은 곳 얼룩 · 물건)" if settings.get("crouch_hold", true) else "누를 때마다 숙이기 · 일어서기 (낮은 곳 얼룩 · 물건)"
+	var keys := [["1단계 · 현장 정리", ""], ["W A S D / 마우스", "이동 / 둘러보기"], ["1 · 2 · 3, 휠", "손 · 소독 분무기 · 스크러버"], ["왼쪽 버튼 누르고 있기", "도구 사용. 소독약을 먼저 뿌려야 잘 닦인다"], ["E / Q / X", "집어 보기 · 보관 / 폐기 / 내려놓기"], ["E (서랍 · 문)", "열기 · 닫기"], ["F", "손전등"], ["I / Tab", "보관함 열기 · 넣거나 버린 물건 다시 꺼내기"], ["C" if OS.has_feature("web") else "Ctrl", crouch_txt], ["", ""], ["2단계 · 유품 조사", ""], ["끌기 / 휠", "돌려 보기 / 확대"], ["클릭", "수상한 곳 조사 · 뚜껑 열고 닫기"], ["U / H / R", "UV 라이트 / 단서 위치 / 정면"], ["", ""], ["3단계 · 사건 재구성", ""], ["쪽지 · 보기 선택", "답과 근거 단서(최대 2장)를 고른다"], ["", ""], ["Esc / F11", "멈춤 / 전체 화면"]]
 	if touch:
-		keys = [["1단계 · 현장 정리", ""], ["왼쪽 / 오른쪽 화면 끌기", "이동 / 둘러보기"], ["손 · 분무기 · 스크러버", "도구 바꾸기"], ["집기 · 뿌리기 · 문지르기", "누르고 있으면 도구 사용. 소독약을 먼저 뿌려야 잘 닦인다"], ["보관 / 폐기 / 내려놓기", "들고 있는 물건 분류"], ["손전등 · 멈춤", "오른쪽 · 왼쪽 위 버튼"], ["보관함", "넣은 물건 보기 · 다시 꺼내기 (왼쪽 위)"], ["숙이기", "눌러서 숙이기 · 일어서기 (왼쪽)"], ["", ""], ["2단계 · 유품 조사", ""], ["끌기 / 두 손가락", "돌려 보기 / 확대"], ["누르기", "수상한 곳 조사"], ["UV · 단서 위치 · 정면", "화면 아래 버튼"], ["", ""], ["3단계 · 사건 재구성", ""], ["쪽지 · 보기 선택", "답과 근거 단서(최대 2장)를 고른다"]]
+		keys = [["1단계 · 현장 정리", ""], ["왼쪽 / 오른쪽 화면 끌기", "이동 / 둘러보기"], ["손 · 분무기 · 스크러버", "도구 바꾸기"], ["집기 · 뿌리기 · 문지르기", "누르고 있으면 도구 사용. 소독약을 먼저 뿌려야 잘 닦인다"], ["보관 / 폐기 / 내려놓기", "들고 있는 물건 분류"], ["집기 (서랍 · 문)", "열기 · 닫기"], ["손전등 · 멈춤", "오른쪽 · 왼쪽 위 버튼"], ["보관함", "넣거나 버린 물건 보기 · 다시 꺼내기 (왼쪽 위)"], ["숙이기", "눌러서 숙이기 · 일어서기 (왼쪽)"], ["", ""], ["2단계 · 유품 조사", ""], ["끌기 / 두 손가락", "돌려 보기 / 확대"], ["누르기", "수상한 곳 조사 · 뚜껑 열고 닫기"], ["UV · 단서 위치 · 정면", "화면 아래 버튼"], ["", ""], ["3단계 · 사건 재구성", ""], ["쪽지 · 보기 선택", "답과 근거 단서(최대 2장)를 고른다"]]
 	for kv in keys:
 		var head: bool = kv[1] == "" and kv[0] != ""
-		grid.add_child(Ui.label(kv[0], 17 if head else 16, Ui.ACCENT if head else Color("e6e1d8"), Ui.serif_b if head else Ui.sans_b))
-		grid.add_child(Ui.label(kv[1], 16, Color("cfc9bf"), Ui.sans))
+		grid.add_child(Ui.label(kv[0], 18 if head else 16, Ui.INK, Ui.serif_b if head else Ui.sans_b))
+		grid.add_child(Ui.label(kv[1], 16, Ui.INK_DIM, Ui.sans))
 	v.add_child(grid)
-	v.add_child(Ui.gap(8))
-	v.add_child(_buttons_row([["닫기", func(): close_modal()]], false))
-	p.add_child(v)
-	open_modal(p)
-
-
-func open_settings() -> void:
-	var p := Ui.panel(Ui.dark_box(0.97, 34, 0.1))
-	var v := Ui.vbox(4)
-	var head := Ui.hbox(0)
-	head.add_child(Ui.expand(Ui.label("설정", 30, Ui.TEXT, Ui.serif_b)))
-	var ver := Ui.label("v%s" % VERSION, 14, Color(1, 1, 1, 0.4), Ui.sans)
-	ver.size_flags_vertical = Control.SIZE_SHRINK_END
-	head.add_child(ver)
-	v.add_child(head)
 	v.add_child(Ui.gap(4))
-	var body := Ui.vbox(2)
-	var pct := func(x: float) -> String: return "%d%%" % roundi(x * 100.0)
-	_set_head(body, "화면")
+	v.add_child(_buttons_row([["닫기", func(): close_modal()]]))
+	p.add_child(v)
+	open_modal(p, back)
+
+
+# ───────────────────────────── 설정 (현장 장비 점검표)
+const SETTINGS_TABS := ["화면", "소리", "조작", "기록", "정보"]
+## 쪽마다 아래 비고 칸에 손글씨로 적는 한마디
+const SETTINGS_TIPS := [
+	"화면이 끊기면 화질을 낮추고, 어지러우면 흔들림을 끄거나 시야를 넓힌다.",
+	"주변 소리를 줄이면 숨소리와 발소리가 또렷하게 들린다.",
+	"숙이기를 '한 번씩'으로 두면 Ctrl을 계속 누르고 있지 않아도 된다.",
+	"백업 코드는 메모장이나 메일에 붙여 두면 기기를 바꿔도 이어서 할 수 있다.",
+	"문제가 생기면 메일로 알려 주세요. 버전과 기기를 같이 적어 주면 빨리 고칠 수 있다."]
+const ONOFF := [["켬", true], ["끔", false]]
+var settings_tab := 0
+var _set_n := 0
+
+
+## 클립보드에 끼운 점검표: 위에 쪽 색인, 가운데 번호 매긴 항목 표, 아래 손글씨 비고
+func open_settings(tab := -1) -> void:
+	if tab >= 0:
+		settings_tab = tab
+	_set_n = 0
+	var paper := Ui.ClipPaper.new()
+	var v := Ui.vbox(6)
+	# 머리: 양식 이름 · 제목 | 양식 번호 · 점검일
+	var head := Ui.hbox(0)
+	var hv := Ui.vbox(0)
+	hv.add_child(Ui.label("현장 장비 점검표", 14, Ui.INK_DIM, Ui.spaced))
+	hv.add_child(Ui.label("설정", 34, Ui.INK, Ui.serif_b))
+	head.add_child(Ui.expand(hv))
+	var meta := Ui.vbox(0)
+	meta.size_flags_vertical = Control.SIZE_SHRINK_END
+	var form := Ui.label("양식 LR-%s" % VERSION, 13, Ui.INK_DIM, Ui.sans)
+	form.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	meta.add_child(form)
+	var dt := Time.get_date_dict_from_system()
+	var dr := Ui.hbox(8)
+	dr.alignment = BoxContainer.ALIGNMENT_END
+	var dl := Ui.label("점검일", 13, Ui.INK_DIM, Ui.sans)
+	dl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	dr.add_child(dl)
+	dr.add_child(Ui.label("%d. %d. %d." % [dt.year, dt.month, dt.day], 26, Ui.BLUE_INK, Ui.hand))
+	meta.add_child(dr)
+	head.add_child(meta)
+	v.add_child(head)
+	v.add_child(Ui.rule(0.6, 2))
+	# 쪽 색인 (가로)
+	var tabs := Ui.hbox(6)
+	for i in SETTINGS_TABS.size():
+		var tb := Ui.InkTab.new("%d  %s" % [i + 1, SETTINGS_TABS[i]])
+		tb.custom_minimum_size = Vector2(112, 50)
+		tb.set_on(i == settings_tab)
+		var idx := i
+		tb.pressed.connect(func(): _settings_go(idx))
+		tabs.add_child(tb)
+	v.add_child(tabs)
+	# 표 머리
+	var th := Ui.hbox(12)
+	var th_no := Ui.label("번호", 12, Ui.INK_DIM, Ui.spaced)
+	th_no.custom_minimum_size = Vector2(40, 0)
+	th.add_child(th_no)
+	th.add_child(Ui.expand(Ui.label("점검 항목", 12, Ui.INK_DIM, Ui.spaced)))
+	th.add_child(Ui.label("상태", 12, Ui.INK_DIM, Ui.spaced))
+	v.add_child(th)
+	v.add_child(Ui.rule(0.5, 1))
+	# 항목 (쪽마다 여섯 줄 자리를 잡아 두어 쪽을 넘겨도 종이 크기가 같다)
+	var body := Ui.vbox(0)
+	body.custom_minimum_size = Vector2(820, 6 * 61)
+	match settings_tab:
+		0: _settings_view(body)
+		1: _settings_sound(body)
+		2: _settings_control(body)
+		3: _settings_record(body)
+		_: _settings_info(body)
+	# 남은 칸은 빈 줄로 (종이 양식처럼)
+	for i in max(0, 6 - _set_n):
+		var blank := Control.new()
+		blank.custom_minimum_size = Vector2(0, 59)
+		blank.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		body.add_child(blank)
+		body.add_child(Ui.DotRule.new())
+	v.add_child(body)
+	# 비고
+	var tip := Ui.Lined.new()
+	tip.custom_minimum_size = Vector2(820, 92)
+	var tv := Ui.vbox(0)
+	tv.add_child(Ui.label("비고", 12, Ui.INK_DIM, Ui.spaced))
+	var text: String = SETTINGS_TIPS[settings_tab]
+	if settings_tab == 2 and touch:
+		text = "버튼이 손가락에 비해 작으면 버튼 크기를 '크게'로 바꾼다."
+	elif settings_tab == 2 and OS.has_feature("web"):
+		text = text.replace("Ctrl", "C")
+	var tt := Ui.label(text, 25, Ui.BLUE_INK, Ui.hand, true)
+	tt.custom_minimum_size = Vector2(800, 0)
+	tv.add_child(tt)
+	tip.add_child(tv)
+	v.add_child(tip)
+	# 아래: 기본값 · 키 안내 · 닫기
+	var foot := Ui.hbox(28)
+	foot.add_child(Ui.button("기본값으로 되돌리기", 16, _settings_reset, Ui.sans, Ui.INK_DIM, Ui.RED))
+	foot.add_child(Ui.expand(Control.new()))
 	if not touch:
-		_set_seg(body, "전체 화면", "F11로도 바꿀 수 있다", "fullscreen", [["켜기", true], ["끄기", false]], func(_x): _apply_settings())
-	_set_slider(body, "밝기", "방이 너무 어두우면 올린다", "bright", 0.6, 1.6, 0.1, pct, func(_x): apply_view())
-	_set_seg(body, "걷기 흔들림", "걸을 때 화면이 위아래로 흔들린다", "bob", [["켜기", true], ["끄기", false]], Callable())
-	_set_head(body, "소리")
-	_set_slider(body, "소리 크기", "", "volume", 0.0, 1.0, 0.05, pct, func(x): Sfx.set_master(x))
-	_set_seg(body, "숨소리", "방독 마스크 너머로 들리는 숨소리", "breath", [["켜기", true], ["끄기", false]], Callable())
-	_set_head(body, "조작")
-	_set_slider(body, "둘러보기 감도" if touch else "마우스 감도", "", "sens", 0.3, 2.5, 0.1, func(x: float) -> String: return "%.1f배" % x, func(x):
+		var kh := Ui.label("1 ~ 5  쪽 넘기기     Esc  닫기", 13, Ui.INK_DIM, Ui.sans)
+		kh.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		foot.add_child(kh)
+	foot.add_child(Ui.ink_button("닫기", 22, func():
+		write_save()
+		close_modal()))
+	v.add_child(foot)
+	paper.add_child(v)
+	var board := Ui.panel(Ui.board_box())
+	board.add_child(paper)
+	open_modal(board)
+	modal_key_cb = func(ev: InputEventKey):
+		var k: int = ev.physical_keycode
+		if k >= KEY_1 and k <= KEY_5:
+			_settings_go(k - KEY_1)
+		elif k == KEY_TAB:
+			_settings_go((settings_tab + 1) % SETTINGS_TABS.size())
+
+
+func _settings_go(i: int) -> void:
+	if i == settings_tab:
+		return
+	settings_tab = i
+	Sfx.play("paper", 0.3)
+	open_settings()
+
+
+func _settings_view(body: VBoxContainer) -> void:
+	var pct := func(x: float) -> String: return "%d%%" % roundi(x * 100.0)
+	if not touch:
+		_set_choice(body, "전체 화면", "F11로도 바꿀 수 있다", "fullscreen", ONOFF, func(_x): _apply_settings())
+	_set_ruler(body, "밝기", "방이 너무 어두우면 올린다", "bright", 0.6, 1.6, 0.1, pct, func(_x): apply_view())
+	_set_ruler(body, "시야", "한눈에 보이는 넓이. 기본 72°", "fov", 60.0, 90.0, 2.0, func(x: float) -> String: return "%d°" % roundi(x), func(_x): apply_view())
+	_set_choice(body, "화질", "화면이 끊기면 낮춘다 (그림자 · 안개 · 해상도)", "quality", [["낮음", "low"], ["보통", "mid"], ["높음", "high"]], func(_x): apply_view())
+	_set_choice(body, "걷기 흔들림", "걸을 때 화면이 위아래로 흔들린다", "bob", ONOFF)
+	_set_choice(body, "깜빡임 줄이기", "깜빡이는 전등 · 손전등을 고르게 켠다", "calm", ONOFF)
+
+
+func _settings_sound(body: VBoxContainer) -> void:
+	var pct := func(x: float) -> String: return "%d%%" % roundi(x * 100.0)
+	_set_ruler(body, "전체 소리", "", "volume", 0.0, 1.0, 0.05, pct, func(x): Sfx.set_master(x))
+	_set_ruler(body, "효과음", "발소리 · 분무기 · 종이 소리", "sfx", 0.0, 1.0, 0.05, pct, func(x): Sfx.set_bus("Effects", x))
+	_set_ruler(body, "주변 소리", "방 안의 웅웅거림 · 파리 소리", "amb", 0.0, 1.0, 0.05, pct, func(x): Sfx.set_bus("Ambience", x))
+	_set_choice(body, "숨소리", "방독 마스크 너머로 들리는 숨소리", "breath", ONOFF)
+	if not touch and not OS.has_feature("web"):
+		_set_choice(body, "다른 창을 볼 때", "게임 창에서 벗어나 있으면 소리를 끈다", "bg_mute", [["소리 끄기", true], ["그대로", false]])
+
+
+func _settings_control(body: VBoxContainer) -> void:
+	_set_ruler(body, "둘러보기 감도" if touch else "마우스 감도", "", "sens", 0.3, 2.5, 0.1, func(x: float) -> String: return "%.1f배" % x, func(x):
 		if world and stage == "room":
 			world.sens = 0.0022 * x)
-	_set_seg(body, "상하 반전", "위아래로 둘러보는 방향을 뒤집는다", "invert", [["켜기", true], ["끄기", false]], Callable())
+	_set_choice(body, "상하 반전", "위아래로 둘러보는 방향을 뒤집는다", "invert", ONOFF)
 	if touch:
-		_set_seg(body, "버튼 크기", "현장 화면의 터치 버튼", "pad", [["작게", 0.85], ["보통", 1.0], ["크게", 1.2]], Callable())
-	_set_head(body, "업데이트")
-	_set_seg(body, "새 버전 자동 확인", "게임을 켤 때 새 버전이 있는지 확인한다", "autoupdate", [["켜기", true], ["끄기", false]], Callable())
-	var ur := Ui.hbox(16)
-	var ul := Ui.label("지금 버전  v%s" % VERSION, 16, Color("cfc9bf"), Ui.sans)
-	ul.custom_minimum_size = Vector2(250, 0)
-	ul.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	ur.add_child(ul)
-	var ub := _seg_button("지금 확인", false)
-	ub.pressed.connect(func(): check_update(true))
-	ur.add_child(ub)
-	body.add_child(ur)
-	_set_head(body, "이용 안내")
-	var tr := Ui.hbox(16)
-	var tl := Ui.label("이용 안내 및 약관 (%s)" % TERMS.get("version", ""), 16, Color("cfc9bf"), Ui.sans)
-	tl.custom_minimum_size = Vector2(250, 0)
-	tl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	tr.add_child(tl)
-	var tb := _seg_button("읽어 보기", false)
-	tb.pressed.connect(func(): open_terms())
-	tr.add_child(tb)
-	body.add_child(tr)
-	var sc := ScrollContainer.new()
-	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	sc.custom_minimum_size = Vector2(700, min(get_viewport().get_visible_rect().size.y * 0.7, 640.0))
-	sc.add_child(body)
-	v.add_child(sc)
-	v.add_child(Ui.gap(8))
-	var foot := Ui.hbox(0)
-	foot.add_child(Ui.button("기본값으로", 18, func():
-		var keep_fs: bool = settings.fullscreen
-		settings = DEFAULT_SETTINGS.duplicate()
-		settings.fullscreen = keep_fs
-		_apply_settings()
-		apply_view()
-		if world and stage == "room":
-			world.sens = 0.0022 * float(settings.sens)
-		write_save()
-		open_settings(), Ui.sans, Color(1, 1, 1, 0.5)))
-	foot.add_child(Ui.expand(Control.new()))
-	foot.add_child(Ui.button("닫기", 22, func():
-		write_save()
-		close_modal(), Ui.serif_b))
-	v.add_child(foot)
-	p.add_child(v)
-	open_modal(p)
+		_set_choice(body, "버튼 크기", "현장 화면의 터치 버튼", "pad", [["작게", 0.85], ["보통", 1.0], ["크게", 1.2]])
+	else:
+		_set_choice(body, "숙이기 (%s)" % ("C" if OS.has_feature("web") else "Ctrl"), "누르고 있는 동안만 숙이거나, 누를 때마다 바꾼다", "crouch_hold", [["누르고 있기", true], ["한 번씩", false]], func(_x):
+			if world and stage == "room":
+				world.crouch_toggle = false)
+	_set_action(body, "조작법", "키와 버튼을 한 장에 모아 본다", "조작법 보기", func(): open_help(func(): open_settings()))
 
 
-func _set_head(box: VBoxContainer, text: String) -> void:
-	box.add_child(Ui.gap(10))
-	box.add_child(Ui.label(text, 14, Ui.ACCENT, Ui.spaced))
-	var line := ColorRect.new()
-	line.color = Color(1, 1, 1, 0.1)
-	line.custom_minimum_size = Vector2(0, 1)
-	box.add_child(line)
+func _settings_record(body: VBoxContainer) -> void:
+	var n := 0
+	for E in EPISODES:
+		if save.done.has(E.id):
+			n += 1
+	_set_info(body, "끝낸 장", "기록은 %s에만 저장된다" % ("이 브라우저" if OS.has_feature("web") else "이 기기"), "%d / %d" % [n, EPISODES.size()])
+	_set_action(body, "백업 코드 만들기", "끝낸 장 · 등급 · 설정을 코드로 옮겨 둔다", "코드 만들기", _backup_show)
+	var b := _set_action(body, "백업 코드로 되살리기", "보관해 둔 코드를 붙여 넣어 기록을 되살린다" if stage == "title" else "타이틀 화면의 설정에서 할 수 있다", "코드 넣기", _backup_paste)
+	b.disabled = stage != "title"
+	if not (OS.has_feature("web") or OS.has_feature("android") or OS.has_feature("ios")):
+		_set_action(body, "저장 폴더", "save.json을 복사해 두면 직접 백업할 수 있다", "폴더 열기", func(): OS.shell_open(OS.get_user_data_dir()))
 
 
+func _settings_info(body: VBoxContainer) -> void:
+	var r := _set_row(body, "지금 버전", "마지막 방 v%s" % VERSION)
+	var ub := Ui.form_button("새 버전 확인", 16, func(): check_update(true))
+	ub.custom_minimum_size.x = 132
+	ub.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	r.add_child(ub)
+	_set_choice(body, "새 버전 자동 확인", "게임을 켤 때 새 버전이 있는지 확인한다", "autoupdate", ONOFF)
+	_set_action(body, "업데이트 노트", "버전마다 바뀐 점", "읽어 보기", func(): open_updates(func(): open_settings()))
+	_set_action(body, "이용 안내 및 약관", "적용일 %s" % TERMS.get("version", ""), "읽어 보기", func(): open_terms(Callable(), func(): open_settings()))
+	var rc := _set_row(body, "문의", CONTACT)
+	var mb := Ui.form_button("메일 쓰기", 16, func(): OS.shell_open("mailto:" + CONTACT))
+	mb.custom_minimum_size.x = 132
+	mb.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	rc.add_child(mb)
+
+
+func _settings_reset() -> void:
+	var keep_fs: bool = settings.fullscreen
+	settings = DEFAULT_SETTINGS.duplicate()
+	settings.fullscreen = keep_fs
+	_apply_settings()
+	apply_view()
+	if world and stage == "room":
+		world.sens = 0.0022 * float(settings.sens)
+		world.crouch_toggle = false
+	write_save()
+	open_settings()
+
+
+## 표 한 줄: 번호 | 항목 이름 · 설명 | (오른쪽 끝에 맞춘) 고르는 칸
 func _set_row(box: VBoxContainer, title: String, desc: String) -> HBoxContainer:
-	var r := Ui.hbox(16)
-	r.custom_minimum_size = Vector2(680, 50)
-	var tv := Ui.vbox(0)
-	tv.custom_minimum_size = Vector2(250, 0)
+	_set_n += 1
+	var r := Ui.hbox(12)
+	r.custom_minimum_size = Vector2(0, 59)
+	var no := Ui.label("%02d" % _set_n, 16, Ui.INK_DIM, Ui.serif)
+	no.custom_minimum_size = Vector2(40, 0)
+	no.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	r.add_child(no)
+	var tv := Ui.vbox(1)
+	tv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	tv.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	tv.add_child(Ui.label(title, 17, Color("e6e1d8"), Ui.sans_b))
+	tv.add_child(Ui.label(title, 18, Ui.INK, Ui.serif_b))
 	if desc != "":
-		var d := Ui.label(desc, 13, Color(1, 1, 1, 0.42), Ui.sans, true)
-		d.custom_minimum_size = Vector2(250, 0)
-		tv.add_child(d)
+		tv.add_child(Ui.label(desc, 13, Ui.INK_DIM, Ui.sans, true))
 	r.add_child(tv)
 	box.add_child(r)
+	box.add_child(Ui.DotRule.new())
 	return r
 
 
-func _seg_button(text: String, on: bool) -> Button:
-	var b := Ui.button(text, 16, Callable(), Ui.sans_b)
-	b.flat = false
-	b.alignment = HORIZONTAL_ALIGNMENT_CENTER
-	b.custom_minimum_size = Vector2(84, 42)
-	_seg_style(b, on)
-	return b
+static func _same(a, b) -> bool:
+	if (a is float or a is int) and (b is float or b is int):
+		return is_equal_approx(float(a), float(b))
+	return typeof(a) == typeof(b) and a == b
 
 
-func _seg_style(b: Button, on: bool) -> void:
-	for c in ["font_color", "font_hover_color", "font_pressed_color", "font_hover_pressed_color"]:
-		b.add_theme_color_override(c, Ui.INK if on else (Color("d8d2c8") if c == "font_color" else Ui.ACCENT))
-	for st in ["normal", "hover", "pressed", "hover_pressed"]:
-		var sb := StyleBoxFlat.new()
-		sb.bg_color = Color("e8e0d2") if on else Color(1, 1, 1, 0.05 if st == "normal" else 0.1)
-		sb.border_color = Color("e8e0d2") if on else Color(1, 1, 1, 0.22)
-		sb.set_border_width_all(1)
-		sb.set_corner_radius_all(3)
-		sb.content_margin_left = 14
-		sb.content_margin_right = 14
-		b.add_theme_stylebox_override(st, sb)
-
-
-func _set_seg(box: VBoxContainer, title: String, desc: String, key: String, opts: Array, cb: Callable) -> void:
+## 보기 중 하나에 동그라미
+func _set_choice(box: VBoxContainer, title: String, desc: String, key: String, opts: Array, cb: Callable = Callable()) -> void:
 	var r := _set_row(box, title, desc)
-	var g := Ui.hbox(6)
+	var g := Ui.hbox(4)
 	g.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var btns := []
 	for o in opts:
-		var b := _seg_button(o[0], settings.get(key) == o[1])
-		var val = o[1]
-		b.pressed.connect(func():
+		var b := Ui.InkChoice.new(o[0])
+		b.set_on(_same(settings.get(key), o[1]))
+		btns.append(b)
+		g.add_child(b)
+	for i in opts.size():
+		var idx := i
+		var val = opts[i][1]
+		btns[i].pressed.connect(func():
+			if _same(settings.get(key), val):
+				return
+			Sfx.play("ui", 0.5)
 			settings[key] = val
+			for j in btns.size():
+				btns[j].set_on(j == idx)
 			if cb.is_valid():
 				cb.call(val)
-			write_save()
-			for i in g.get_child_count():
-				_seg_style(g.get_child(i), settings[key] == opts[i][1]))
-		g.add_child(b)
+			write_save())
 	r.add_child(g)
 
 
-func _set_slider(box: VBoxContainer, title: String, desc: String, key: String, lo: float, hi: float, step: float, fmt: Callable, cb: Callable) -> void:
+## 눈금자: 끌거나 −/+로 조절, 값은 펜으로 적는다
+func _set_ruler(box: VBoxContainer, title: String, desc: String, key: String, lo: float, hi: float, step: float, fmt: Callable, cb: Callable = Callable()) -> void:
 	var r := _set_row(box, title, desc)
-	var s := HSlider.new()
-	s.min_value = lo
-	s.max_value = hi
-	s.step = step
-	s.value = float(settings.get(key, DEFAULT_SETTINGS[key]))
-	s.custom_minimum_size = Vector2(220, 32)
-	s.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	var val := Ui.label(fmt.call(s.value), 16, Color("e6e1d8"), Ui.sans_b)
-	val.custom_minimum_size = Vector2(62, 0)
+	var ru := Ui.InkRuler.new(lo, hi, step, float(settings.get(key, DEFAULT_SETTINGS[key])))
+	ru.custom_minimum_size = Vector2(200, 46)
+	var val := Ui.label(fmt.call(ru.value), 28, Ui.BLUE_INK, Ui.hand)
+	val.custom_minimum_size = Vector2(76, 0)
 	val.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	val.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	s.value_changed.connect(func(x):
+	ru.changed.connect(func(x: float):
 		settings[key] = x
 		val.text = fmt.call(x)
 		if cb.is_valid():
 			cb.call(x))
-	s.drag_ended.connect(func(_c): write_save())
-	var minus := _seg_button("−", false)
-	minus.custom_minimum_size = Vector2(42, 42)
-	minus.pressed.connect(func():
-		s.value = s.value - step
+	ru.released.connect(func(): write_save())
+	var minus := Ui.form_button("−", 18, func():
+		ru.set_value(ru.value - step)
 		write_save())
-	var plus := _seg_button("+", false)
-	plus.custom_minimum_size = Vector2(42, 42)
-	plus.pressed.connect(func():
-		s.value = s.value + step
+	minus.custom_minimum_size = Vector2(44, 44)
+	var plus := Ui.form_button("+", 18, func():
+		ru.set_value(ru.value + step)
 		write_save())
-	for c in [minus, s, plus, val]:
+	plus.custom_minimum_size = Vector2(44, 44)
+	for c in [minus, ru, plus, val]:
 		c.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		r.add_child(c)
 
 
-## 밝기를 지금 보이는 3D 화면에 적용
+func _set_action(box: VBoxContainer, title: String, desc: String, label: String, cb: Callable) -> Button:
+	var r := _set_row(box, title, desc)
+	var b := Ui.form_button(label, 16, cb)
+	b.custom_minimum_size.x = 132
+	b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	r.add_child(b)
+	return b
+
+
+func _set_info(box: VBoxContainer, title: String, desc: String, value: String) -> void:
+	var r := _set_row(box, title, desc)
+	var l := Ui.label(value, 30, Ui.BLUE_INK, Ui.hand)
+	l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	r.add_child(l)
+
+
+# ───────────────────────────── 기록 백업 코드
+const BACKUP_TAG := "LASTROOM1"
+
+
+func _backup_code() -> String:
+	var body := Marshalls.utf8_to_base64(JSON.stringify({"v": 1, "done": save.get("done", {}), "settings": settings}))
+	return "%s:%s:%s" % [BACKUP_TAG, body, body.sha256_text().substr(0, 8)]
+
+
+## 코드 → {"done", "settings"}. 틀린 코드면 빈 사전
+func _backup_read(code: String) -> Dictionary:
+	var c := code.strip_edges().replace("\n", "").replace("\r", "").replace(" ", "")
+	if c.length() > 20000:
+		return {}
+	var parts := c.split(":")
+	if parts.size() != 3 or parts[0] != BACKUP_TAG or parts[1].sha256_text().substr(0, 8) != parts[2]:
+		return {}
+	var d = JSON.parse_string(Marshalls.base64_to_utf8(parts[1]))
+	if not (d is Dictionary) or not (d.get("done") is Dictionary):
+		return {}
+	return {"done": _clean_done(d.done), "settings": _clean_settings(d.get("settings", {}))}
+
+
+func _code_field(text: String, editable: bool) -> LineEdit:
+	var le := LineEdit.new()
+	le.text = text
+	le.editable = editable
+	le.select_all_on_focus = true
+	le.max_length = 20000
+	le.custom_minimum_size = Vector2(600, 46)
+	le.add_theme_font_override("font", Ui.sans)
+	le.add_theme_font_size_override("font_size", 15)
+	for k in ["font_color", "font_uneditable_color", "caret_color"]:
+		le.add_theme_color_override(k, Ui.INK)
+	le.add_theme_color_override("font_placeholder_color", Color(Ui.INK, 0.4))
+	le.add_theme_color_override("selection_color", Color(Ui.RED, 0.3))
+	for st in ["normal", "focus", "read_only"]:
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = Color(1, 1, 1, 0.35)
+		sb.border_color = Color(Ui.INK, 0.6 if st == "focus" else 0.35)
+		sb.set_border_width_all(1)
+		sb.content_margin_left = 12
+		sb.content_margin_right = 12
+		le.add_theme_stylebox_override(st, sb)
+	return le
+
+
+func _backup_sheet(title: String, text: String) -> Array:
+	var p := Ui.panel(Ui.paper_box(false, 40))
+	var v := Ui.vbox(10)
+	v.add_child(Ui.label("기록 백업", 14, Ui.INK_DIM, Ui.spaced))
+	v.add_child(Ui.label(title, 28, Ui.INK, Ui.serif_b))
+	v.add_child(Ui.rule(0.6, 2))
+	var t := Ui.label(text, 16, Ui.INK, Ui.serif, true)
+	t.custom_minimum_size = Vector2(600, 0)
+	v.add_child(t)
+	p.add_child(v)
+	return [p, v]
+
+
+func _backup_show() -> void:
+	var code := _backup_code()
+	DisplayServer.clipboard_set(code)
+	var pv := _backup_sheet("백업 코드", "코드를 복사했다. 메모장 · 메일 같은 곳에 붙여 넣어 보관해 두세요. 기기를 바꾸거나 기록이 지워졌을 때, 타이틀 화면의 설정 → 기록에서 되살릴 수 있다.")
+	var v: VBoxContainer = pv[1]
+	v.add_child(_code_field(code, false))
+	var note := Ui.label("복사가 안 됐다면 칸을 눌러 전부 고른 뒤 복사한다. 코드에는 끝낸 장 · 등급 · 설정만 들어 있다.", 14, Ui.INK_DIM, Ui.sans, true)
+	note.custom_minimum_size = Vector2(600, 0)
+	v.add_child(note)
+	v.add_child(_buttons_row([["다시 복사", func():
+		DisplayServer.clipboard_set(code)
+		note.text = "다시 복사했다."], ["닫기", func(): close_modal(), 21]]))
+	open_modal(pv[0], func(): open_settings())
+
+
+func _backup_paste() -> void:
+	var pv := _backup_sheet("백업 코드로 되살리기", "보관해 둔 코드를 아래 칸에 붙여 넣는다. 지금 기록(끝낸 장 · 등급 · 설정)은 코드의 기록으로 바뀐다.")
+	var v: VBoxContainer = pv[1]
+	var le := _code_field("", true)
+	le.placeholder_text = BACKUP_TAG + ": 로 시작하는 코드"
+	v.add_child(le)
+	var msg := Ui.label("", 15, Ui.RED, Ui.sans, true)
+	msg.custom_minimum_size = Vector2(600, 0)
+	v.add_child(msg)
+	v.add_child(_buttons_row([["붙여 넣기", func(): le.text = DisplayServer.clipboard_get().strip_edges().left(20000)], ["그만둔다", func(): close_modal()], ["되살리기", func():
+		var d := _backup_read(le.text)
+		if d.is_empty():
+			msg.text = "코드가 맞지 않는다. 빠진 글자 없이 전부 붙여 넣었는지 확인해 주세요."
+			Sfx.play("error", 0.5)
+			return
+		confirm("기록을 바꿀까?", "지금 기록이 코드의 기록(끝낸 장 %d개)으로 바뀐다." % d.done.size(), "바꾼다", func(): _backup_apply(d)), 21]]))
+	open_modal(pv[0], func(): open_settings())
+	if not touch:
+		le.grab_focus.call_deferred()
+
+
+func _backup_apply(d: Dictionary) -> void:
+	save.done = d.done
+	settings = d.settings
+	write_save()
+	_apply_settings()
+	apply_view()
+	show_title()
+	toast("기록을 되살렸다 — 끝낸 장 %d개" % d.done.size())
+
+
+## 밝기 · 시야 · 화질을 지금 보이는 3D 화면에 적용
 func apply_view() -> void:
+	_apply_scale()
 	if world == null:
 		return
 	var we = world.get("world_env")
@@ -1383,10 +1908,29 @@ func apply_view() -> void:
 	if we is WorldEnvironment and we.environment:
 		we.environment.adjustment_enabled = true
 		we.environment.adjustment_brightness = float(settings.get("bright", 1.0))
+		apply_quality_env(we.environment)
+	var shadows: bool = settings.get("quality", "high") != "low"
+	if stage == "room" and world.get("cam") is Camera3D:
+		world.cam.fov = float(settings.get("fov", 72.0))
+		world.flash.shadow_enabled = shadows
+	elif stage == "inspect" and world.get("L") is Dictionary and world.L.has("key"):
+		world.L.key.shadow_enabled = shadows
+
+
+## 화질: 낮음은 그림자 · 빛 번짐 · 공기 안개를 끄고, 보통은 공기 안개 · 구석 그늘만 끈다
+func apply_quality_env(e: Environment) -> void:
+	var q: String = settings.get("quality", "high")
+	e.ssao_enabled = q == "high"
+	e.glow_enabled = q != "low"
+	if e.has_meta("vfog"):
+		e.volumetric_fog_enabled = q == "high"
 
 
 # ───────────────────────────── 새 버전 확인 · 자동 업데이트
 const UPDATE_URL := "https://eunyool10.github.io/LastRoom/version.json"
+const PAGE_URL := "https://eunyool10.github.io/LastRoom/"
+## 새 버전 파일은 이 게임의 GitHub 릴리스에서만 받는다
+const RELEASE_URL := "https://github.com/EunYool10/LastRoom/releases/download/"
 var update_checked := false
 var update_info := {}
 var _upd_http: HTTPRequest
@@ -1401,11 +1945,42 @@ static func _ver_num(v: String) -> int:
 	return n
 
 
+static func _ver_ok(v) -> bool:
+	return v is String and RegEx.create_from_string("^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$").search(v) != null
+
+
+## 새 버전 정보에 적힌 주소가 이 게임의 릴리스 파일일 때만 그대로 쓴다
+func _release_url(u) -> String:
+	var s := str(u)
+	var ok := s.begins_with(RELEASE_URL) or (testing and s.begins_with("http://127.0.0.1:"))
+	if not ok or s.length() > 300 or s.contains("..") or s.contains("?") or s.contains("#") or s.contains(" "):
+		return ""
+	return s
+
+
+## 게임 밖 페이지 열기 (점검 중에는 열지 않고 적기만 한다)
+func _open_url(u: String) -> void:
+	if testing:
+		print("OPEN_URL ", u)
+		return
+	OS.shell_open(u)
+
+
+## 지난번에 받은 설치 파일은 다음 실행 때 지운다
+func _clean_update_dir() -> void:
+	var dir := OS.get_user_data_dir().path_join("update")
+	if not DirAccess.dir_exists_absolute(dir):
+		return
+	for f in DirAccess.get_files_at(dir):
+		DirAccess.remove_absolute(dir.path_join(f))
+
+
 func check_update(manual := false) -> void:
 	if _upd_http and is_instance_valid(_upd_http):
 		return
 	_upd_http = HTTPRequest.new()
 	_upd_http.timeout = 12.0
+	_upd_http.body_size_limit = 65536
 	add_child(_upd_http)
 	_upd_http.request_completed.connect(func(result: int, code: int, _h, body: PackedByteArray):
 		_upd_http.queue_free()
@@ -1415,10 +1990,12 @@ func check_update(manual := false) -> void:
 				toast("새 버전을 확인하지 못했다. 인터넷 연결을 확인해 주세요.")
 			return
 		var d = JSON.parse_string(body.get_string_from_utf8())
-		if not (d is Dictionary) or not d.has("version"):
+		if not (d is Dictionary) or not _ver_ok(d.get("version")):
+			if manual:
+				toast("새 버전 정보를 읽지 못했다.")
 			return
 		update_info = d
-		if _ver_num(str(d.version)) > _ver_num(VERSION):
+		if _ver_num(d.version) > _ver_num(VERSION):
 			_show_update(d)
 		elif manual:
 			toast("지금이 최신 버전이다 (v%s)" % VERSION))
@@ -1453,22 +2030,22 @@ func _show_update(d: Dictionary) -> void:
 	now.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	h.add_child(now)
 	v.add_child(h)
-	var line := ColorRect.new()
-	line.color = Color(Ui.INK, 0.3)
-	line.custom_minimum_size = Vector2(0, 1)
-	v.add_child(line)
-	for item in d.get("notes", []):
-		var t := Ui.label("·  " + str(item), 16, Ui.INK, Ui.sans, true)
+	v.add_child(Ui.rule(0.3))
+	var notes = d.get("notes", [])
+	if not (notes is Array):
+		notes = []
+	for item in notes.slice(0, 8):
+		var t := Ui.label("·  " + str(item).left(160), 16, Ui.INK, Ui.sans, true)
 		t.custom_minimum_size = Vector2(560, 0)
 		v.add_child(t)
 	var how := {
-		"windows": "새 설치 파일을 받아 지금 설치된 게임 위에 바로 설치하고, 다시 켠다. 기록은 그대로 남는다.",
+		"windows": "새 설치 파일을 받아 원본과 같은지 확인한 다음, 지금 설치된 게임 위에 설치하고 다시 켠다. 기록은 그대로 남는다.",
 		"android": "새 APK를 받는다. 받은 파일을 열어 [업데이트]를 누르면 지금 앱 위에 설치되고, 기록은 그대로 남는다.",
 		"mac": "내려받기 페이지에서 새 앱을 받아 응용 프로그램 폴더의 앱과 바꾼다. 기록은 그대로 남는다.",
 		"web": "새 버전으로 다시 불러온다. 기록은 그대로 남는다.",
 		"page": "내려받기 페이지에서 새 버전을 받는다."}
 	v.add_child(Ui.gap(4))
-	var hl := Ui.label(how[key] + (" 업데이트하면 새 버전의 이용 안내에 동의한 것으로 봅니다(설정 → 이용 안내)." if key == "windows" else ""), 15, Ui.INK_DIM, Ui.sans, true)
+	var hl := Ui.label(how[key] + (" 업데이트하면 새 버전의 이용 안내에 동의한 것으로 봅니다(설정 → 정보 → 이용 안내)." if key == "windows" else ""), 15, Ui.INK_DIM, Ui.sans, true)
 	hl.custom_minimum_size = Vector2(560, 0)
 	v.add_child(hl)
 	var label: String = {"windows": "지금 업데이트", "android": "새 APK 받기", "mac": "내려받기 페이지 열기", "web": "새로 불러오기", "page": "내려받기 페이지 열기"}[key]
@@ -1482,19 +2059,24 @@ func _do_update(d: Dictionary, key: String) -> void:
 		"windows":
 			_download_installer(d)
 		"android":
-			OS.shell_open(str(d.get("android", d.get("page", ""))))
+			var u := _release_url(d.get("android", ""))
+			_open_url(u if u.ends_with(".apk") else PAGE_URL)
 			close_modal()
 		"web":
 			JavaScriptBridge.eval("(async()=>{try{const rs=await navigator.serviceWorker.getRegistrations();await Promise.all(rs.map(r=>r.unregister()));const ks=await caches.keys();await Promise.all(ks.map(k=>caches.delete(k)));}catch(e){}location.reload();})()")
 		_:
-			OS.shell_open(str(d.get("page", "")))
+			_open_url(PAGE_URL)
 			close_modal()
 
 
 func _download_installer(d: Dictionary) -> void:
-	var url := str(d.get("windows", ""))
-	if url == "":
-		OS.shell_open(str(d.get("page", "")))
+	var url := _release_url(d.get("windows", ""))
+	var sums = d.get("sha256", {})
+	var want := str(sums.get("windows", "")).to_lower() if sums is Dictionary else ""
+	# 주소가 이 게임의 릴리스가 아니거나 확인값(SHA-256)이 없으면 받지 않고 내려받기 페이지를 연다
+	if not url.ends_with(".exe") or RegEx.create_from_string("^[0-9a-f]{64}$").search(want) == null:
+		_open_url(PAGE_URL)
+		close_modal()
 		return
 	var dir := OS.get_user_data_dir().path_join("update")
 	DirAccess.make_dir_recursive_absolute(dir)
@@ -1502,7 +2084,7 @@ func _download_installer(d: Dictionary) -> void:
 	var p := Ui.panel(Ui.paper_box(false, 40))
 	var v := Ui.vbox(12)
 	v.add_child(Ui.label("새 버전 받는 중", 24, Ui.INK, Ui.serif_b))
-	var st := Ui.label("연결하는 중…", 16, Ui.INK_DIM, Ui.sans)
+	var st := Ui.label("연결하는 중…", 16, Ui.INK_DIM, Ui.sans, true)
 	st.custom_minimum_size = Vector2(460, 0)
 	v.add_child(st)
 	var bar := ProgressBar.new()
@@ -1515,19 +2097,20 @@ func _download_installer(d: Dictionary) -> void:
 	bar.add_theme_stylebox_override("background", bg)
 	bar.add_theme_stylebox_override("fill", fg)
 	v.add_child(bar)
-	v.add_child(_buttons_row([["그만두기", func():
+	v.add_child(_buttons_row([["그만두기", func(): close_modal()]]))
+	p.add_child(v)
+	# 닫으면(그만두기 · Esc) 받던 것도 멈춘다
+	open_modal(p, func():
 		if _upd_dl and is_instance_valid(_upd_dl):
 			_upd_dl.cancel_request()
 			_upd_dl.queue_free()
-			_upd_dl = null
-		close_modal()]]))
-	p.add_child(v)
-	open_modal(p)
+			_upd_dl = null)
 	_upd_dl = HTTPRequest.new()
 	_upd_dl.download_file = path
 	_upd_dl.max_redirects = 10
 	_upd_dl.use_threads = true
 	_upd_dl.download_chunk_size = 1048576
+	_upd_dl.body_size_limit = 400 * 1048576
 	add_child(_upd_dl)
 	var dl := _upd_dl
 	var tick := Timer.new()
@@ -1548,7 +2131,15 @@ func _download_installer(d: Dictionary) -> void:
 		if result != HTTPRequest.RESULT_SUCCESS or code != 200 or not FileAccess.file_exists(path):
 			st.text = "받지 못했다. 잠시 뒤 다시 해 보거나 내려받기 페이지에서 받아 주세요."
 			return
-		st.text = "설치를 시작한다. 잠시 뒤 게임이 다시 켜진다."
+		# 받은 파일이 원본과 같은지 확인값으로 확인한 다음에만 실행한다
+		if FileAccess.get_sha256(path).to_lower() != want:
+			DirAccess.remove_absolute(path)
+			st.text = "받은 파일이 원본과 달라 실행하지 않고 지웠다. 내려받기 페이지에서 받아 주세요."
+			Sfx.play("error", 0.6)
+			if testing:
+				print("UPDATE_BADHASH ", path)
+			return
+		st.text = "원본과 같은 파일인지 확인했다. 설치를 시작한다. 잠시 뒤 게임이 다시 켜진다."
 		bar.value = 100.0
 		write_save()
 		await get_tree().create_timer(0.8).timeout

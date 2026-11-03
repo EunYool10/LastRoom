@@ -62,6 +62,7 @@ func _build_world() -> void:
 	e.adjustment_enabled = true
 	e.adjustment_saturation = 0.9
 	e.adjustment_brightness = float(Game.settings.get("bright", 1.0))
+	Game.apply_quality_env(e)
 	env = WorldEnvironment.new()
 	env.environment = e
 	add_child(env)
@@ -74,7 +75,7 @@ func _build_world() -> void:
 	L.key = DirectionalLight3D.new()
 	L.key.light_color = Color("fff1e0")
 	L.key.light_energy = 1.25
-	L.key.shadow_enabled = true
+	L.key.shadow_enabled = Game.settings.get("quality", "high") != "low"
 	L.key.rotation = Vector3(deg_to_rad(-48), deg_to_rad(28), 0)
 	add_child(L.key)
 	L.fill = DirectionalLight3D.new()
@@ -199,6 +200,10 @@ func _model(d: Dictionary) -> Dictionary:
 	for u in res.get("uv", []):
 		u.visible = uv
 	var m := {"res": res, "holder": holder, "spots": spots, "dim": mdim, "half": a.size.y / 2.0}
+	if res.has("lid"):
+		m.lid0 = res.lid.rotation.x
+	if res.has("drawer"):
+		m.drawer0 = res.drawer.position.z
 	models[d.id] = m
 	if S.opened.get(d.id, false) == true:
 		_apply_opened(m, true)
@@ -268,6 +273,10 @@ func select(id: String) -> void:
 	bench.position.y = -m.half - 0.003
 	U.name.text = d.name
 	U.desc.text = d.get("desc", "")
+	var main = _main_spot()
+	U.read.visible = main != null
+	if main != null:
+		U.read.text = "펼쳐 읽기" if main.def.has("read") else "화면 켜기"
 	_refresh_list()
 	Sfx.play("ui", 0.4)
 
@@ -418,7 +427,7 @@ func _activate(sp: Dictionary) -> void:
 		Game.open_phone()
 	elif sd.get("action", "") == "combo":
 		if S.opened.has(item.id):
-			Game.note(item.name, "이미 열었다. 안은 붉은 천으로 덧대어져 있다.")
+			_toggle_open(cur.m, item)
 			return
 		var m: Dictionary = cur.m
 		Game.open_combo(str(ep.combo.code), func():
@@ -450,7 +459,7 @@ func _activate(sp: Dictionary) -> void:
 		return
 	elif sd.get("action", "") == "false":
 		if S.opened.has(item.id):
-			Game.note(item.name, "이중 바닥은 이미 열었다.")
+			_toggle_open(cur.m, item)
 			return
 		S.opened[item.id] = true
 		_apply_opened(cur.m, false)
@@ -466,6 +475,34 @@ func _activate(sp: Dictionary) -> void:
 		Game.note(item.name, sd.text)
 		Sfx.play("click", 0.6)
 	refresh()
+
+
+## 지금 물건에서 읽을 곳(글) 또는 켤 화면(휴대폰 · 노트북)
+func _main_spot():
+	if cur == null:
+		return null
+	for sp in cur.m.spots:
+		if sp.def.has("read"):
+			return sp
+	for sp in cur.m.spots:
+		if sp.def.get("action", "") == "phone":
+			return sp
+	return null
+
+
+## 한 번 연 뚜껑 · 이중 바닥은 다시 닫고 열 수 있다
+func _toggle_open(m: Dictionary, item: Dictionary) -> void:
+	var res: Dictionary = m.res
+	m.closed = not m.get("closed", false)
+	var open: bool = not m.closed
+	if res.has("lid"):
+		create_tween().tween_property(res.lid, "rotation:x", -1.9 if open else float(m.get("lid0", 0.0)), 0.6).set_trans(Tween.TRANS_CUBIC)
+		Sfx.play("click", 0.6)
+		Game.note(item.name, "뚜껑을 열었다. 안은 붉은 천으로 덧대어져 있다." if open else "뚜껑을 닫았다.")
+	elif res.has("drawer"):
+		create_tween().tween_property(res.drawer, "position:z", 0.1 if open else float(m.get("drawer0", 0.0)), 0.6).set_trans(Tween.TRANS_CUBIC)
+		Sfx.play("drawer", 0.6)
+		Game.note(item.name, "이중 바닥을 열었다." if open else "이중 바닥을 닫았다.")
 
 
 # ───────────────────────────── 입력
@@ -692,10 +729,20 @@ func _build_ui() -> void:
 	ds.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	head.add_child(nm)
 	head.add_child(ds)
+	# 읽을 수 있는 물건(다이어리 · 편지 · 쪽지)은 버튼으로도 바로 펼친다
+	var rd := Ui.button("펼쳐 읽기", 18, func():
+		var sp = _main_spot()
+		if sp != null:
+			_activate(sp), Ui.sans_b)
+	_tool_style(rd, false)
+	rd.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	rd.visible = false
+	head.add_child(rd)
 	head.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(head)
 	U.name = nm
 	U.desc = ds
+	U.read = rd
 	# 도구
 	var tb := Ui.hbox(18 if Game.touch else 30)
 	Ui.pin(tb, 0.5, 1, 0, -70 if Game.touch else -58, 0, -1)

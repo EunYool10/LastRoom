@@ -360,16 +360,30 @@ static func _low_table() -> Dictionary:
 	return {"g": g, "foot": Vector2(0.62, 0.62)}
 
 
+## 연탄난로: 쇠 몸통 · 띠 · 다리 · 뚜껑 · 재받이, 연통은 위로 올라가 꺾여서 벽 속으로 들어간다
 static func _stove() -> Dictionary:
 	var g := node(null)
-	var m := mat(0x3a3836, 0.6, 0.4)
-	var m2 := mat(0x2a2826, 0.7, 0.3)
-	cyl(g, 0.2, 0.22, 0.52, m, Vector3(0, 0.26, 0))
-	cyl(g, 0.24, 0.24, 0.03, m2, Vector3(0, 0.535, 0))
-	cyl(g, 0.1, 0.1, 0.02, m2, Vector3(0, 0.56, 0))
-	cyl(g, 0.05, 0.05, 1.2, m2, Vector3(0.12, 1.15, -0.05), 12)
-	var pipe := cyl(g, 0.05, 0.05, 0.3, m2, Vector3(0.12, 1.75, -0.2), 12)
-	pipe.rotation.x = PI / 2
+	var iron := mat(0x2e2b29, 0.55, 0.45)
+	var band := mat(0x5a544d, 0.4, 0.6)
+	var rust := mat(0x5b3a26, 0.85, 0.2)
+	var pipe_m := mat(0x3b3936, 0.5, 0.5)
+	cyl(g, 0.205, 0.215, 0.48, iron, Vector3(0, 0.3, 0), 32)
+	cyl(g, 0.222, 0.222, 0.03, band, Vector3(0, 0.08, 0), 32)
+	cyl(g, 0.219, 0.219, 0.025, band, Vector3(0, 0.51, 0), 32)
+	for i in 3:
+		var a := TAU * i / 3.0 + 0.5
+		cyl(g, 0.018, 0.022, 0.06, iron, Vector3(cos(a) * 0.16, 0.03, sin(a) * 0.16), 8)
+	cyl(g, 0.24, 0.24, 0.025, iron, Vector3(0, 0.55, 0), 32)
+	cyl(g, 0.115, 0.12, 0.02, band, Vector3(0, 0.572, 0.03), 24)
+	box(g, Vector3(0.08, 0.015, 0.018), mat(0x1c1a19, 0.6, 0.3), Vector3(0, 0.59, 0.03))
+	box(g, Vector3(0.2, 0.08, 0.05), rust, Vector3(0, 0.15, 0.205))
+	box(g, Vector3(0.07, 0.012, 0.02), band, Vector3(0, 0.15, 0.24))
+	cyl(g, 0.045, 0.045, 1.2, pipe_m, Vector3(0, 1.16, -0.12), 16)
+	sph(g, 0.047, pipe_m, Vector3(0, 1.76, -0.12), 16)
+	var hp := cyl(g, 0.045, 0.045, 0.32, pipe_m, Vector3(0, 1.76, -0.28), 16)
+	hp.rotation.x = PI / 2
+	var collar := cyl(g, 0.075, 0.075, 0.01, band, Vector3(0, 1.76, -0.392), 24)
+	collar.rotation.x = PI / 2
 	return {"g": g, "foot": Vector2(0.48, 0.48)}
 
 
@@ -401,30 +415,77 @@ static func _emat(p: Dictionary) -> Dictionary:
 	return {"g": g}
 
 
+## 싱크대: 문 두 짝, 오목한 개수대와 수도꼭지
 static func _sink(p: Dictionary) -> Dictionary:
 	var g := node(null)
 	var w: float = p.get("w", 1.0)
 	var d := 0.5
-	box(g, Vector3(w, 0.8, d), mat(0xcdbfa6, 0.6), Vector3(0, 0.4, 0))
-	box(g, Vector3(w, 0.03, d), mat(0x9aa0a3, 0.35, 0.6), Vector3(0, 0.815, 0))
-	box(g, Vector3(0.4, 0.02, 0.3), mat(0x55595c, 0.4, 0.5), Vector3(-0.15, 0.82, 0))
-	cyl(g, 0.012, 0.012, 0.2, mat(0xb0b0b0, 0.2, 0.8), Vector3(-0.15, 0.93, -0.2), 8)
-	box(g, Vector3(0.005, 0.6, 0.005), mat(0x6d604c), Vector3(0, 0.4, d / 2 + 0.002))
+	var h := 0.8
+	var depth := 0.16
+	var body := mat(0xd8ccb4, 0.65)
+	var steel := mat(0xa3a9ac, 0.3, 0.7)
+	box(g, Vector3(w - 0.04, 0.08, d - 0.08), mat(0x3a3430, 0.8), Vector3(0, 0.04, -0.02))
+	_cabinet(g, w, d, 0.08, h, h + 0.03 - depth - 0.02, body)
+	for sx in [-1, 1]:
+		box(g, Vector3(w / 2 - 0.02, h - 0.2, 0.016), mat(0xe4dac5, 0.55), Vector3(sx * w / 4, 0.08 + (h - 0.2) / 2 + 0.02, d / 2 + 0.004))
+		box(g, Vector3(0.012, 0.12, 0.02), steel, Vector3(sx * 0.04, 0.6, d / 2 + 0.018))
+	_basin_top(g, w, d, h + 0.015, 0.03, steel, p.get("bx", -0.15), p.get("bw", 0.42), 0.3, depth)
+	box(g, Vector3(w, 0.14, 0.012), mat(0xdfe3e0, 0.4), Vector3(0, h + 0.1, -d / 2 + 0.006))
 	return {"g": g, "foot": Vector2(w, d)}
 
 
 static func _kitchen(p: Dictionary) -> Dictionary:
 	var g := node(null)
 	var w: float = p.get("w", 1.8)
+	var d := 0.6
+	var depth := 0.16
 	var white := mat(0xf3f0ee, 0.35)
-	box(g, Vector3(w, 0.88, 0.6), white, Vector3(0, 0.44, 0))
-	box(g, Vector3(w, 0.03, 0.6), mat(0xd8d2cf, 0.3), Vector3(0, 0.895, 0))
-	box(g, Vector3(0.45, 0.01, 0.35), mat(0x1d1d1f, 0.2), Vector3(-w / 2 + 0.4, 0.91, 0))
-	box(g, Vector3(0.4, 0.02, 0.3), mat(0xb9bec2, 0.3, 0.6), Vector3(0.1, 0.905, 0))
+	_cabinet(g, w, d, 0.0, 0.88, 0.88 - depth - 0.02, white)
+	box(g, Vector3(0.45, 0.01, 0.35), mat(0x1d1d1f, 0.2), Vector3(-w / 2 + 0.4, 0.915, 0))
+	_basin_top(g, w, d, 0.895, 0.03, mat(0xd8d2cf, 0.3), p.get("bx", 0.1), 0.46, 0.36, depth)
 	box(g, Vector3(w, 0.65, 0.34), white, Vector3(0, 1.75, -0.13))
 	for i in range(4):
-		box(g, Vector3(0.005, 0.8, 0.005), mat(0xcfcac6), Vector3(-w / 2 + (i + 1) * w / 5, 0.44, 0.302))
-	return {"g": g, "foot": Vector2(w, 0.6)}
+		box(g, Vector3(0.005, 0.8, 0.005), mat(0xcfcac6), Vector3(-w / 2 + (i + 1) * w / 5, 0.44, d / 2 + 0.002))
+	return {"g": g, "foot": Vector2(w, d)}
+
+
+## 수납장 몸통: 아래는 꽉 찬 상자, 위쪽은 개수대가 들어가도록 테두리만
+static func _cabinet(g: Node3D, w: float, d: float, y0: float, y1: float, solid_top: float, m: Material) -> void:
+	box(g, Vector3(w, solid_top - y0, d), m, Vector3(0, (y0 + solid_top) / 2, 0))
+	var sh := y1 - solid_top
+	var sy := solid_top + sh / 2
+	box(g, Vector3(w, sh, 0.02), m, Vector3(0, sy, d / 2 - 0.01))
+	box(g, Vector3(w, sh, 0.02), m, Vector3(0, sy, -d / 2 + 0.01))
+	box(g, Vector3(0.02, sh, d), m, Vector3(-w / 2 + 0.01, sy, 0))
+	box(g, Vector3(0.02, sh, d), m, Vector3(w / 2 - 0.01, sy, 0))
+
+
+## 상판에 개수대 구멍을 내고(네 조각), 오목한 개수대 · 배수구 · 수도꼭지를 붙인다
+static func _basin_top(g: Node3D, w: float, d: float, top_y: float, t: float, top_m: Material, bx: float, bw: float, bd: float, depth: float) -> void:
+	var lw := (bx - bw / 2) + w / 2
+	var rw := w / 2 - (bx + bw / 2)
+	var fd := (d - bd) / 2
+	box(g, Vector3(lw, t, d), top_m, Vector3(-w / 2 + lw / 2, top_y, 0))
+	box(g, Vector3(rw, t, d), top_m, Vector3(w / 2 - rw / 2, top_y, 0))
+	box(g, Vector3(bw, t, fd), top_m, Vector3(bx, top_y, d / 2 - fd / 2))
+	box(g, Vector3(bw, t, fd), top_m, Vector3(bx, top_y, -d / 2 + fd / 2))
+	var steel_d := mat(0x7f868a, 0.35, 0.7)
+	var top := top_y + t / 2
+	box(g, Vector3(bw, 0.01, bd), steel_d, Vector3(bx, top - depth, 0))
+	box(g, Vector3(0.008, depth, bd), steel_d, Vector3(bx - bw / 2 + 0.004, top - depth / 2, 0))
+	box(g, Vector3(0.008, depth, bd), steel_d, Vector3(bx + bw / 2 - 0.004, top - depth / 2, 0))
+	box(g, Vector3(bw, depth, 0.008), steel_d, Vector3(bx, top - depth / 2, bd / 2 - 0.004))
+	box(g, Vector3(bw, depth, 0.008), steel_d, Vector3(bx, top - depth / 2, -bd / 2 + 0.004))
+	cyl(g, 0.03, 0.03, 0.004, mat(0x2a2a2a, 0.5, 0.5), Vector3(bx, top - depth + 0.007, 0), 16)
+	var chrome := mat(0xbfc3c6, 0.25, 0.5)
+	var fz := -d / 2 + fd / 2
+	cyl(g, 0.024, 0.026, 0.03, chrome, Vector3(bx, top + 0.015, fz), 16)
+	cyl(g, 0.013, 0.013, 0.2, chrome, Vector3(bx, top + 0.13, fz), 12)
+	sph(g, 0.0135, chrome, Vector3(bx, top + 0.23, fz), 12)
+	var spout := cyl(g, 0.011, 0.011, 0.16, chrome, Vector3(bx, top + 0.23, fz + 0.08), 12)
+	spout.rotation.x = PI / 2
+	cyl(g, 0.01, 0.012, 0.035, chrome, Vector3(bx, top + 0.213, fz + 0.16), 12)
+	box(g, Vector3(0.014, 0.012, 0.075), chrome, Vector3(bx, top + 0.25, fz - 0.025))
 
 
 static func _boiler() -> Dictionary:
