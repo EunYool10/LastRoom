@@ -57,6 +57,7 @@ var touchpad: Control
 var stain_aim = null
 var crouch := 0.0
 var crouch_toggle := false
+var hint_said := false
 
 
 func setup(e: Dictionary, state: Dictionary, is_preview := false) -> void:
@@ -552,6 +553,10 @@ func _update_hud() -> void:
 	var ok := func(b): return "■ " if b else "□ "
 	H_.o1.text = ok.call(c.sdone == c.stotal) + "오염 제거   %d / %d   (%d%%)" % [c.sdone, c.stotal, int(c.avg * 100)]
 	H_.o2.text = ok.call(c.sorted == c.total) + "유품 분류   %d / %d" % [c.sorted, c.total]
+	# 보이는 건 다 분류했는데 숨은 물건(서랍 · 장롱 · 가방 안)이 남았으면 숫자가 왜 모자란지 알려 준다
+	var hl := hidden_left()
+	if hl > 0 and c.sorted + hl == c.total:
+		H_.o2.text += "   · 아직 못 찾은 물건 %d" % hl
 	H_.o4.text = "기록한 단서   %d" % S.clues.size()
 	H_.o3.text = ok.call(false) + "현관으로 나가 작업실 복귀"
 	H_.o1.add_theme_color_override("font_color", Ui.OK if c.sdone == c.stotal else Ui.TEXT)
@@ -862,13 +867,50 @@ func _check_complete() -> void:
 		Sfx.play("done", 0.6)
 		Game.say("(정리가 끝났다. 현관으로 나가 작업실로 돌아가자.)", 4.5)
 		_update_hud()
-	elif not complete and c.sdone == c.stotal and c.total - c.sorted > 0:
-		var all_hidden := true
-		for it in items:
-			if it.state != "gone" and not it.hidden:
-				all_hidden = false
-		if all_hidden:
-			Game.say("(눈에 보이는 건 다 치웠는데… 아직 열어 보지 않은 곳이 있다.)", 4.2)
+	elif not complete and c.total - c.sorted > 0 and c.sorted + hidden_left() == c.total and not hint_said:
+		# 보이는 물건은 다 분류했는데 숨은 물건이 남았다: 어디를 열어 봐야 하는지 바로 일러 준다
+		hint_said = true
+		var place := hidden_place()
+		if place != "":
+			Game.say("(눈에 보이는 건 다 분류했다. %s%s 아직 열어 보지 않았다.)" % [place, _obj_particle(place)], 4.6)
+		else:
+			Game.say("(눈에 보이는 건 다 분류했는데… 아직 열어 보지 않은 곳이 있다.)", 4.2)
+
+
+## 아직 찾지 못한(숨은 채로 남은) 물건 수
+func hidden_left() -> int:
+	var n := 0
+	for it in items:
+		if it.hidden and it.state != "gone" and S.sorted.get(it.def.id, "") == "" and not _env_opened_for(it):
+			n += 1
+	return n
+
+
+func _env_opened_for(it) -> bool:
+	for en in envs:
+		if en.def.get("reveal", "") == it.def.id and en.used:
+			return true
+	return false
+
+
+## 숨은 물건이 들어 있는 곳의 이름 (아직 열지 않은 서랍 · 장롱 · 가방)
+func hidden_place() -> String:
+	for it in items:
+		if it.hidden and it.state != "gone" and not _env_opened_for(it):
+			for en in envs:
+				if en.def.get("reveal", "") == it.def.id:
+					return str(en.def.name)
+	return ""
+
+
+## 받침에 따라 '을/를'
+static func _obj_particle(word: String) -> String:
+	if word == "":
+		return "를"
+	var c := word.unicode_at(word.length() - 1)
+	if c < 0xAC00 or c > 0xD7A3:
+		return "를"
+	return "을" if (c - 0xAC00) % 28 != 0 else "를"
 
 
 func _stain_done(st: Stain) -> void:

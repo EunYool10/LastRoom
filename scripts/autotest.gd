@@ -1229,3 +1229,38 @@ func click_test(o: String) -> void:
 		await _wait(0.05)
 	print("CLICK inspect click with 22px jitter -> opened=", Game.modal_open, " spot_done=", Game.S.spots.has("diary:front"), " drag=", ins.drag, " pick_at_release=", ins._pick_near(sc + Vector2(14, 8)) != null)
 	get_tree().quit()
+
+
+## 숨은 물건 안내: 보이는 물건을 다 분류하면 숫자 옆 안내 · 장소 혼잣말 (--hiddentest, 2장 자개장)
+func hidden_test(o: String) -> void:
+	out = o
+	DirAccess.make_dir_recursive_absolute(out)
+	await _wait(0.8)
+	Game.show_brief(Game.EPISODES[1])
+	await _wait(0.3)
+	Game.enter_room()
+	for i in range(80):
+		if Game.pause_root.visible:
+			break
+		await _wait(0.1)
+	Game.hide_pause()
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	await _wait(0.6)
+	var room = Game.world
+	for it in room.items:
+		if not it.hidden and it.state != "gone":
+			room.sort_item(it, it.def.kind != "trash")
+	await _wait(0.5)
+	print("HIDDEN left=", room.hidden_left(), " place=", room.hidden_place(), " hud=", room.H_.o2.text, " say=", Game.say_label.text)
+	await _shot("hidden_hud")
+	Game.open_inventory()
+	await _wait(0.4)
+	await _shot("hidden_inventory")
+	Game.close_modal()
+	for en in room.envs:
+		if en.def.get("reveal", "") != "":
+			room.use_env(en)
+	await _wait(0.8)
+	room._update_hud()
+	print("HIDDEN after opening left=", room.hidden_left(), " hud=", room.H_.o2.text)
+	get_tree().quit()

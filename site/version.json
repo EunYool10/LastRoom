@@ -1,18 +1,18 @@
 {
-  "version": "1.3.1",
+  "version": "1.3.2",
   "date": "2026-11-03",
   "notes": [
-    "버튼이 씹히던 문제: 글자 버튼은 글자 둘레까지, 유품 조사는 손이 조금 떨려도 눌린다",
-    "현장에서 작은 물건 · 서랍 · 문을 살짝 비껴 겨눠도 집거나 연다",
+    "숨은 물건 안내: 보이는 물건을 다 분류하면 아직 못 찾은 물건과 열어 볼 곳을 알려 준다",
+    "1.3.1: 버튼이 씹히던 문제 수정(글자 버튼 둘레까지 눌림, 조사 중 손 떨림 허용, 살짝 비껴 겨눠도 집기)",
     "1.3.0: 시작 화면, 클립보드 점검표 설정, 보관함 새 단장, 기록 백업 코드, 3장 다이어리 · 4장 열림 수정, 새 아이콘"
   ],
-  "windows": "https://github.com/EunYool10/LastRoom/releases/download/v1.3.1/LastRoom-Setup-1.3.1.exe",
-  "android": "https://github.com/EunYool10/LastRoom/releases/download/v1.3.1/LastRoom-1.3.1-android.apk",
-  "mac": "https://github.com/EunYool10/LastRoom/releases/download/v1.3.1/LastRoom-1.3.1-mac.zip",
+  "windows": "https://github.com/EunYool10/LastRoom/releases/download/v1.3.2/LastRoom-Setup-1.3.2.exe",
+  "android": "https://github.com/EunYool10/LastRoom/releases/download/v1.3.2/LastRoom-1.3.2-android.apk",
+  "mac": "https://github.com/EunYool10/LastRoom/releases/download/v1.3.2/LastRoom-1.3.2-mac.zip",
   "sha256": {
-    "windows": "212e0751c04c7faa5dced478692d4689b60b2892686e86b6961a162f30e13cdc",
-    "android": "3cf0b0da8d24cd38ee4c39e191ba970f862879bc953eb89f7e441a6835aa534d",
-    "mac": "602bb2cf5f303a3132dc28b33051d471e0399e4de1ddfa1aea8ec0919b4661e8"
+    "windows": "c46a0be5777a39bd2b2f242440eb97fadc82f57be811994147129686d453ba63",
+    "android": "a7c1212f165cbbe77fb5f692f9f225fbe9f4300e867d818a041d26686e9aa060",
+    "mac": "1b70e81270b89753bb22e4afdae5c3b2116e86795f00fc8047a3e84581fdbf95"
   },
   "page": "https://eunyool10.github.io/LastRoom/",
   "terms": "2026-11-03"
