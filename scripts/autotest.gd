@@ -1353,4 +1353,69 @@ func title_test(o: String) -> void:
 	await _key(KEY_ENTER)
 	await _wait(0.4)
 	print("TITLE enter -> stage=", Game.stage)
+	# 기록 지우기: 설정 → 기록에서
+	Game.show_title()
+	await _wait(0.4)
+	Game.save.seen_notes = "0"
+	Game.show_title()
+	await _wait(0.4)
+	await _shot("title_menu_new")
+	Game.open_settings(3)
+	await _wait(0.4)
+	await _shot("settings_record_reset")
+	for bt in Game.modal_root.find_children("*", "Button", true, false):
+		if bt.text == "지우기":
+			bt.pressed.emit()
+			break
+	await _wait(0.3)
+	await _shot("reset_confirm")
+	for bt in Game.modal_root.find_children("*", "Button", true, false):
+		if bt.text == "지우기":
+			bt.pressed.emit()
+			break
+	await _wait(0.4)
+	print("TITLE after reset done=", Game.save.done.size(), " stage=", Game.stage, " settings_kept=", Game.settings.size() > 5, " seen_notes_kept=", Game.save.get("seen_notes", ""))
+	get_tree().quit()
+
+
+## 3장 침대 · 창문 · 링 라이트 모양 확인 (--furntest)
+func furn_test(o: String) -> void:
+	out = o
+	DirAccess.make_dir_recursive_absolute(out)
+	await _wait(0.8)
+	var room = await _enter(2)
+	var views := [
+		["window_bed", Vector3(-0.2, 0, 0.7), Vector3(1.15, 1.0, -1.6)],
+		["bed_head", Vector3(0.35, 0, 0.1), Vector3(1.3, 0.55, -1.55)],
+		["bed_foot", Vector3(0.3, 0, 1.0), Vector3(1.35, 0.45, -0.2)],
+		["bed_top", Vector3(1.35, 0, 1.05), Vector3(1.35, 0.3, -0.75)],
+		["window_close", Vector3(0.45, 0, -0.85), Vector3(1.0, 1.45, -1.79)],
+		["ring_back", Vector3(-0.35, 0, 0.85), Vector3(-1.0, 1.25, -0.15)],
+		["ring_front", Vector3(-0.45, 0, -1.05), Vector3(-1.0, 1.35, -0.15)],
+		["rack_front", Vector3(0.55, 0, 0.8), Vector3(1.75, 1.0, 0.77)],
+		["rack_angle", Vector3(0.45, 0, 0.0), Vector3(1.75, 0.95, 0.85)],
+	]
+	for v in views:
+		room.player.position = v[1]
+		for i in range(3):
+			await get_tree().physics_frame
+		await _look_at_point(room, v[2])
+		await _wait(0.6)
+		await _shot(v[0])
+	for en in room.envs:
+		if en.def.id == "ring":
+			room.use_env(en)
+	await _wait(0.4)
+	room.player.position = Vector3(-0.35, 0, 0.85)
+	await _look_at_point(room, Vector3(-1.0, 1.25, -0.15))
+	await _wait(0.5)
+	await _shot("ring_off")
+	# 1장 벽 옷 봉
+	room = await _enter(0)
+	room.player.position = Vector3(0.0, 0, 0.35)
+	for i in range(3):
+		await get_tree().physics_frame
+	await _look_at_point(room, Vector3(1.04, 1.45, -0.2))
+	await _wait(0.6)
+	await _shot("ch1_rail")
 	get_tree().quit()

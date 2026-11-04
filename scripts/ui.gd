@@ -243,6 +243,35 @@ static func form_button(text: String, size := 16, cb: Callable = Callable()) -> 
 	return b
 
 
+## 종이 꼬리표 버튼 (타이틀 아래 메뉴): 테두리가 보이니 누르는 곳을 넓히지 않는다
+static func tag_button(text: String, size := 15, cb: Callable = Callable()) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.focus_mode = Control.FOCUS_NONE
+	b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	b.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	b.custom_minimum_size = Vector2(0, 42)
+	b.add_theme_font_override("font", sans_b)
+	b.add_theme_font_size_override("font_size", size)
+	b.add_theme_color_override("font_color", INK)
+	for k in ["font_hover_color", "font_pressed_color", "font_hover_pressed_color"]:
+		b.add_theme_color_override(k, RED)
+	for st in ["normal", "hover", "pressed", "hover_pressed"]:
+		var s := paper_box(false, 10)
+		s.content_margin_left = 14
+		s.content_margin_right = 14
+		s.content_margin_top = 6
+		s.content_margin_bottom = 6
+		if st != "normal":
+			s.modulate_color = Color(0.9, 0.87, 0.82)
+		b.add_theme_stylebox_override(st, s)
+	if cb.is_valid():
+		b.pressed.connect(func():
+			Sfx.play("ui", 0.5)
+			cb.call())
+	return b
+
+
 ## 종이 위 잉크 줄
 static func rule(alpha := 0.18, h := 1) -> ColorRect:
 	var r := ColorRect.new()
@@ -608,3 +637,66 @@ class RoundStamp extends Control:
 		var fs := int(r * 1.0)
 		var w := Ui.serif_b.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
 		draw_string(Ui.serif_b, c + Vector2(-w / 2.0, fs * 0.36), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, ink)
+
+
+## 타이틀 위쪽 메뉴: 선으로 그린 작은 그림 + 글자. 올리면 밝아지고 밑줄
+class NavButton extends Button:
+	var kind := ""
+	var dot := false
+
+	func _init(t: String, k: String) -> void:
+		text = t
+		kind = k
+		flat = true
+		focus_mode = Control.FOCUS_NONE
+		mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+		alignment = HORIZONTAL_ALIGNMENT_LEFT
+		add_theme_font_override("font", Ui.sans_b)
+		add_theme_font_size_override("font_size", 15)
+		for st in ["normal", "hover", "pressed", "hover_pressed", "focus"]:
+			var s := StyleBoxEmpty.new()
+			s.content_margin_left = 30
+			s.content_margin_right = 4
+			s.content_margin_top = 12
+			s.content_margin_bottom = 12
+			add_theme_stylebox_override(st, s)
+		add_theme_color_override("font_color", Color("cfc8bc"))
+		for c in ["font_hover_color", "font_pressed_color", "font_hover_pressed_color"]:
+			add_theme_color_override(c, Color("f6f2ea"))
+		mouse_entered.connect(queue_redraw)
+		mouse_exited.connect(queue_redraw)
+
+	func _draw() -> void:
+		var hov := is_hovered()
+		var c := Color("f6f2ea") if hov else Color("cfc8bc")
+		var o := Vector2(3, size.y * 0.5)
+		var w := 1.7
+		match kind:
+			"settings":
+				for i in 3:
+					var y := o.y - 6.0 + i * 6.0
+					draw_line(Vector2(o.x, y), Vector2(o.x + 18, y), c, w, true)
+					draw_circle(Vector2(o.x + [12.0, 4.0, 9.0][i], y), 2.8, c)
+			"help":
+				draw_rect(Rect2(o.x, o.y - 6.5, 19, 13), c, false, w)
+				for r in 2:
+					for k in 3:
+						draw_rect(Rect2(o.x + 3.5 + k * 4.6, o.y - 3.2 + r * 4.2, 2.6, 2.2), c)
+			"notes":
+				draw_polyline(PackedVector2Array([Vector2(o.x + 2, o.y - 8), Vector2(o.x + 11, o.y - 8), Vector2(o.x + 16, o.y - 3), Vector2(o.x + 16, o.y + 8), Vector2(o.x + 2, o.y + 8), Vector2(o.x + 2, o.y - 8)]), c, w, true)
+				draw_polyline(PackedVector2Array([Vector2(o.x + 11, o.y - 8), Vector2(o.x + 11, o.y - 3), Vector2(o.x + 16, o.y - 3)]), c, 1.2, true)
+				for i in 3:
+					draw_line(Vector2(o.x + 5, o.y + i * 3.2), Vector2(o.x + 13, o.y + i * 3.2), c, 1.2, true)
+			"credits":
+				draw_arc(Vector2(o.x + 6, o.y - 3.5), 3.3, 0, TAU, 18, c, w, true)
+				draw_arc(Vector2(o.x + 6, o.y + 8.5), 6.2, PI, TAU, 16, c, w, true)
+				draw_arc(Vector2(o.x + 14, o.y - 4.5), 2.7, 0, TAU, 16, c, w, true)
+				draw_arc(Vector2(o.x + 15, o.y + 6.5), 4.6, PI * 1.12, TAU, 12, c, w, true)
+			"quit":
+				draw_arc(Vector2(o.x + 9, o.y + 1), 7.0, -PI / 2 + 0.62, PI * 1.5 - 0.62, 26, c, w, true)
+				draw_line(Vector2(o.x + 9, o.y - 8), Vector2(o.x + 9, o.y + 0.5), c, w, true)
+		if dot:
+			draw_circle(Vector2(o.x + 19, o.y - 9), 3.6, Ui.RED)
+		if hov:
+			var tw := Ui.sans_b.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 15).x
+			draw_line(Vector2(30, size.y - 9), Vector2(30 + tw, size.y - 9), Color(c, 0.55), 1.0)

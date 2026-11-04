@@ -121,6 +121,32 @@ static func ring(parent: Node, r: float, tube: float, m: Material, pos := Vector
 	return n
 
 
+## a에서 b까지 잇는 가는 원통 (다리 · 버팀대 · 전선)
+static func rod(parent: Node, a: Vector3, b: Vector3, r: float, m: Material, seg := 8) -> MeshInstance3D:
+	var n := cyl(parent, r, r, a.distance_to(b), m, (a + b) / 2.0, seg)
+	var y := (b - a).normalized()
+	var x := y.cross(Vector3.FORWARD if absf(y.z) < 0.9 else Vector3.RIGHT).normalized()
+	n.basis = Basis(x, y, x.cross(y))
+	return n
+
+
+## 모서리가 둥근 상자: 잘게 나눈 상자의 점을 가장자리 쪽으로 몰고, 안쪽 상자 둘레로 둥글게 민다
+static func soft_box(parent: Node, size: Vector3, rad: float, m: Material, pos := Vector3.ZERO, sub := Vector3i(12, 4, 16)) -> MeshInstance3D:
+	var bm := BoxMesh.new()
+	bm.size = size
+	bm.subdivide_width = sub.x
+	bm.subdivide_height = sub.y
+	bm.subdivide_depth = sub.z
+	var h := size / 2.0
+	var inner := (h - Vector3.ONE * rad).max(Vector3.ZERO)
+	var mesh := deformed(bm, func(v):
+		var q := Vector3(signf(v.x) * pow(absf(v.x) / h.x, 0.3) * h.x, signf(v.y) * pow(absf(v.y) / h.y, 0.3) * h.y, signf(v.z) * pow(absf(v.z) / h.z, 0.3) * h.z)
+		var c := q.clamp(-inner, inner)
+		var dv := q - c
+		return c + dv.normalized() * rad if dv.length() > 0.00001 else q)
+	return mi(parent, mesh, m, pos)
+
+
 ## +Z를 향한 사각 판
 static func quad(parent: Node, w: float, h: float, m: Material, pos := Vector3.ZERO) -> MeshInstance3D:
 	var q := QuadMesh.new()
@@ -251,6 +277,8 @@ static func furniture(t: String, p: Dictionary) -> Dictionary:
 
 
 static func _bed(p: Dictionary) -> Dictionary:
+	if p.get("style", "") == "premium":
+		return _bed_premium(p)
 	var g := node(null)
 	var w: float = p.get("w", 0.9)
 	var d: float = p.get("d", 1.9)
@@ -267,6 +295,121 @@ static func _bed(p: Dictionary) -> Dictionary:
 	box(g, Vector3(w * 0.62, 0.1, 0.34), mat(int(p.get("pillow", 0xe8e2d6)), 1.0), Vector3(0, 0.48, -d / 2 + 0.25))
 	box(g, Vector3(w, 0.55, 0.05), fm, Vector3(0, 0.52, -d / 2 + 0.025))
 	return {"g": g, "foot": Vector2(w, d)}
+
+
+## 3장 침대 (p.style == "premium"): 천을 씌운 받침 · 모서리가 둥근 매트리스 · 양옆과 발치로 처지는 이불 ·
+## 이불 위로 접어 올린 시트 · 베개 둘과 기대 세운 쿠션 · 세로 줄 머리판 · 발치에 걸친 담요.
+## 높이는 다른 침대와 같다 (매트리스 윗면 0.43, 이불 윗면 약 0.5 — 그 위에 놓인 물건들 때문)
+static func _bed_premium(p: Dictionary) -> Dictionary:
+	var g := node(null)
+	var w: float = p.get("w", 1.3)
+	var d: float = p.get("d", 2.0)
+	var fabric := mat(int(p.get("frame", 0xf1ebe5)), 1.0)
+	var velvet := mat(int(p.get("head", 0xc9b5ab)), 1.0, 0.0, {"rim_enabled": true, "rim": 0.35, "rim_tint": 0.6})
+	var sheet := mat(int(p.get("sheet", 0xffffff)), 1.0)
+	box(g, Vector3(w - 0.12, 0.06, d - 0.12), mat(0x15120f, 0.9), Vector3(0, 0.03, 0))
+	soft_box(g, Vector3(w, 0.17, d), 0.03, fabric, Vector3(0, 0.145, 0), Vector3i(20, 4, 28))
+	soft_box(g, Vector3(w - 0.03, 0.2, d - 0.03), 0.045, sheet, Vector3(0, 0.33, 0), Vector3i(24, 6, 32))
+	# 이불 · 접어 올린 시트 · 담요는 모두 매트리스 모서리 위 같은 곳(높이 0.38)을 중심으로 돌아 내려간다
+	var e := w / 2.0 - 0.06
+	var soft: bool = p.get("pattern", "") == "fluffy"
+	_cloth(g, tmat(p.get("blanket_tex", "blanket_e1"), 1.0), e, 0.465, 0.07, -0.36, d / 2.0 - 0.06, 0.26, true, 0.016 if soft else 0.012, 1.0)
+	_cloth(g, sheet, e, 0.532, 0.03, -0.36, -0.15, 0.3, false, 0.004, 2.0)
+	var tm := mat(int(p.get("throw", 0xb59aa4)), 1.0, 0.0, {"rim_enabled": true, "rim": 0.3, "rim_tint": 0.5})
+	_cloth(g, tm, e, 0.53, 0.022, 0.52, 0.88, 0.3, false, 0.004, 3.0)
+	# 베개 둘: 바닥은 평평하고 위가 부풀었다. 머리판 쪽으로 살짝 기대 있다
+	var pmesh := _puff(Vector3(0.58, 0.14, 0.38), true)
+	var pm := mat(int(p.get("pillow", 0xffffff)), 0.9)
+	var pz := -d / 2.0 + 0.25
+	for sx in [-1, 1]:
+		var pn := mi(g, pmesh, pm, Vector3(sx * 0.305, 0.5, pz))
+		pn.rotation = Vector3(0.08, sx * 0.035, 0)
+	# 베개 앞에 기대 세운 네모 쿠션
+	var cu := mi(g, _puff(Vector3(0.36, 0.13, 0.36), false), mat(int(p.get("cushion", 0xc79aa8)), 1.0, 0.0, {"rim_enabled": true, "rim": 0.35, "rim_tint": 0.6}), Vector3(-0.08, 0.6, -0.5))
+	cu.rotation = Vector3(PI / 2.0 - 0.35, 0.06, 0)
+	# 머리판: 받침판 앞에 세로로 누빈 줄 (창대 아래 0.8까지)
+	var hw := w + 0.06
+	soft_box(g, Vector3(hw, 0.7, 0.05), 0.015, velvet, Vector3(0, 0.43, -d / 2.0 + 0.005), Vector3i(8, 6, 2))
+	var n := int(round(hw / 0.1))
+	var step := hw / n
+	var cap := CapsuleMesh.new()
+	cap.radius = step / 2.0
+	cap.height = 0.5
+	cap.radial_segments = 14
+	cap.rings = 6
+	for i in n:
+		var c := mi(g, cap, velvet, Vector3(-hw / 2.0 + step * (i + 0.5), 0.55, -d / 2.0 + 0.035))
+		c.scale = Vector3(1, 1, 0.6)
+	return {"g": g, "foot": Vector2(w, d)}
+
+
+## 천 위의 한 점: 가운데서 s만큼, 두께 방향으로 t만큼. e까지는 평평하고, 그 뒤로는 (e, -r)을 중심으로
+## 반지름 r만큼 돌아 곧게 내려간다. (가로, 세로)를 돌려준다
+static func _bend(s: float, t: float, e: float, r: float) -> Vector2:
+	var a := absf(s)
+	if a <= e:
+		return Vector2(s, t)
+	var sg := signf(s)
+	var u := a - e
+	var arc := r * PI / 2.0
+	if u <= arc:
+		var th := u / r
+		return Vector2(sg * (e + (r + t) * sin(th)), -r + (r + t) * cos(th))
+	return Vector2(sg * (e + r + t), -r - (u - arc))
+
+
+## 침대 위에 덮은 천 한 장 (y: 가운데 면 높이, th: 두께, z0~z1: 평평한 구간).
+## 양옆은 e에서 꺾여 bottom 높이까지 처지고, foot이면 z1에서 발치로도 처진다. 꺾이는 중심은 높이 0.38
+static func _cloth(g: Node3D, m: Material, e: float, y: float, th: float, z0: float, z1: float, bottom: float, foot: bool, wrinkle: float, sd: float) -> MeshInstance3D:
+	var cy := 0.38
+	var r := y - cy
+	var um := r * PI / 2.0 + maxf(0.0, cy - bottom)
+	var low := bottom - y - 0.04
+	var bm := BoxMesh.new()
+	bm.size = Vector3(2.0, th, 1.0)
+	bm.subdivide_width = 40
+	bm.subdivide_height = 1
+	bm.subdivide_depth = 40 if foot else 12
+	var mesh := deformed(bm, func(v):
+		# 꺾이는 곳에 점이 많이 가도록: 상자의 절반은 평평한 곳, 나머지 절반은 처지는 곳
+		var aq: float = absf(v.x)
+		var s: float = signf(v.x) * (aq / 0.5 * e if aq <= 0.5 else e + (aq - 0.5) / 0.5 * um)
+		var pz: float = v.z + 0.5
+		var zb: float = z0 + pz * (z1 - z0)
+		if foot:
+			zb = z0 + pz / 0.7 * (z1 - z0) if pz <= 0.7 else z1 + (pz - 0.7) / 0.3 * um
+		var t: float = v.y
+		if wrinkle > 0.0:
+			var k: float = (1.0 - smoothstep(e - 0.12, e, absf(s))) * (1.0 - smoothstep(z1 - 0.12, z1, zb) if foot else 1.0)
+			t += ((hash3(Vector3(s * 6.0, sd, zb * 6.0)) - 0.5) * wrinkle + sin(zb * 9.0 + s * 3.0 + sd) * wrinkle * 0.3) * k
+		var bx := _bend(s, t, e, r)
+		var py := bx.y
+		var pzz := zb
+		if foot and zb > z1:
+			var bz := _bend(zb, t, z1, r)
+			pzz = bz.x
+			py = maxf(bx.y + bz.y - t, low)
+		return Vector3(bx.x, py, pzz))
+	return mi(g, mesh, m, Vector3(0, y, 0))
+
+
+## 부푼 베개 · 쿠션: 가운데가 두툼하고 박음선 쪽은 얇으며, 네 귀가 살짝 뾰족하다.
+## 두께는 y 방향. flat이면 바닥은 평평하고 위만 부푼다
+static func _puff(size: Vector3, flat_bottom: bool) -> ArrayMesh:
+	var bm := BoxMesh.new()
+	bm.size = size
+	bm.subdivide_width = 12
+	bm.subdivide_height = 1
+	bm.subdivide_depth = 10
+	var hx := size.x / 2.0
+	var hy := size.y / 2.0
+	var hz := size.z / 2.0
+	return deformed(bm, func(v):
+		var ux: float = absf(v.x) / hx
+		var uz: float = absf(v.z) / hz
+		var f: float = maxf(0.1, (1.0 - pow(ux, 2.4)) * (1.0 - pow(uz, 2.4)))
+		var y: float = -hy + (v.y + hy) * f if flat_bottom else v.y * f
+		return Vector3(v.x * (1.0 - 0.07 * (1.0 - uz * uz)), y, v.z * (1.0 - 0.07 * (1.0 - ux * ux))))
 
 
 static func _desk(p: Dictionary) -> Dictionary:
@@ -498,6 +641,8 @@ static func _boiler() -> Dictionary:
 
 
 static func _window(p: Dictionary) -> Dictionary:
+	if p.get("style", "") == "premium":
+		return _window_premium(p)
 	var g := node(null)
 	var w: float = p.get("w", 0.7)
 	var h: float = p.get("h", 0.5)
@@ -527,6 +672,135 @@ static func _window(p: Dictionary) -> Dictionary:
 	return {"g": g}
 
 
+## 3장 오피스텔 창 (p.style == "premium"): 벽 두께만큼 나온 창틀과 테두리 · 대리석 창대 ·
+## 흰 미닫이 두 짝과 잠금쇠 · 유리에 비친 빛 · 천장 가까이 단 커튼 봉과 고리 ·
+## 주름 깊은 겉커튼 두 폭과 반쯤 친 속커튼. 원점은 유리 가운데, 벽면은 z -0.01.
+## p.rod_y · p.rod_x: 커튼 봉 높이와 양 끝 (오른쪽이 벽에 붙은 창은 봉을 짧게)
+static func _window_premium(p: Dictionary) -> Dictionary:
+	var g := node(null)
+	var w: float = p.get("w", 1.6)
+	var h: float = p.get("h", 1.1)
+	var gm := tmat(p.get("tex", "win_e3"), 1.0, {"unshaded": true})
+	gm.albedo_color = col(int(p.get("tint", 0x9aa4b0)))
+	quad(g, w, h, gm, Vector3.ZERO)
+	var trim := mat(0xf4f2ee, 0.8)
+	var dep := 0.12
+	box(g, Vector3(w + 0.06, 0.03, dep), trim, Vector3(0, h / 2.0 + 0.015, dep / 2.0 - 0.01))
+	for sx in [-1.0, 1.0]:
+		box(g, Vector3(0.03, h + 0.03, dep), trim, Vector3(sx * (w / 2.0 + 0.015), 0.015, dep / 2.0 - 0.01))
+		box(g, Vector3(0.065, h, 0.016), trim, Vector3(sx * (w / 2.0 + 0.0325), 0, dep - 0.002))
+	box(g, Vector3(w + 0.13, 0.065, 0.016), trim, Vector3(0, h / 2.0 + 0.0325, dep - 0.002))
+	box(g, Vector3(w + 0.22, 0.03, dep + 0.06), mat(0xebe8e3, 0.22), Vector3(0, -h / 2.0 - 0.015, (dep + 0.06) / 2.0 - 0.01))
+	box(g, Vector3(w + 0.13, 0.06, 0.014), trim, Vector3(0, -h / 2.0 - 0.06, -0.003))
+	# 흰 창틀과 미닫이 두 짝 (왼쪽은 안쪽 레일, 오른쪽은 바깥 레일, 가운데서 겹친다)
+	var pvc := mat(int(p.get("frame", 0xffffff)), 0.35)
+	box(g, Vector3(w, 0.05, 0.08), pvc, Vector3(0, h / 2.0 - 0.025, 0.03))
+	box(g, Vector3(w, 0.05, 0.08), pvc, Vector3(0, -h / 2.0 + 0.025, 0.03))
+	for sx in [-1.0, 1.0]:
+		box(g, Vector3(0.05, h - 0.1, 0.08), pvc, Vector3(sx * (w / 2.0 - 0.025), 0, 0.03))
+	var ow := w / 2.0 - 0.05
+	var sh := h - 0.1
+	var sheen := _glass_sheen()
+	var grip := mat(0xe9e9e6, 0.4)
+	for k in 2:
+		var x0 := -ow if k == 0 else -0.03
+		var x1 := 0.03 if k == 0 else ow
+		var cx := (x0 + x1) / 2.0
+		var sw := x1 - x0
+		var z := 0.022 if k == 0 else 0.05
+		box(g, Vector3(sw, 0.045, 0.028), pvc, Vector3(cx, sh / 2.0 - 0.0225, z))
+		box(g, Vector3(sw, 0.045, 0.028), pvc, Vector3(cx, -sh / 2.0 + 0.0225, z))
+		box(g, Vector3(0.045, sh - 0.09, 0.028), pvc, Vector3(x0 + 0.0225, 0, z))
+		box(g, Vector3(0.045, sh - 0.09, 0.028), pvc, Vector3(x1 - 0.0225, 0, z))
+		quad(g, sw - 0.09, sh - 0.09, sheen, Vector3(cx, 0, z))
+		box(g, Vector3(0.012, 0.15, 0.012), grip, Vector3(x0 + 0.0225 if k == 0 else x1 - 0.0225, -0.04, z + 0.02))
+	var metal := mat(0xc4c6c8, 0.35, 0.7)
+	box(g, Vector3(0.024, 0.06, 0.01), metal, Vector3(-0.0075, 0, 0.069))
+	var lv := box(g, Vector3(0.04, 0.01, 0.007), metal, Vector3(-0.0195, 0.014, 0.076))
+	lv.rotation.z = 0.45
+	if p.has("curtain"):
+		var gold := mat(0xd8c08c, 0.3, 0.7)
+		var ry: float = p.get("rod_y", h / 2.0 + 0.2)
+		var rx: Array = p.get("rod_x", [-(w / 2.0 + 0.3), w / 2.0 + 0.3])
+		var rx0: float = rx[0]
+		var rx1: float = rx[1]
+		var zr := 0.22
+		var zs := 0.15
+		rod(g, Vector3(rx0, ry, zr), Vector3(rx1, ry, zr), 0.011, gold, 12)
+		rod(g, Vector3(rx0 + 0.06, ry - 0.012, zs), Vector3(rx1 - 0.04, ry - 0.012, zs), 0.006, gold, 8)
+		sph(g, 0.021, gold, Vector3(rx0 - 0.012, ry, zr), 12)
+		sph(g, 0.021, gold, Vector3(rx1 + 0.012, ry, zr), 12)
+		for bx in [rx0 + 0.1, rx1 - 0.1]:
+			var wp := cyl(g, 0.022, 0.022, 0.008, gold, Vector3(bx, ry, -0.006), 14)
+			wp.rotation.x = PI / 2.0
+			rod(g, Vector3(bx, ry, -0.01), Vector3(bx, ry, zr + 0.012), 0.008, gold, 8)
+		# 겉커튼: 봉 고리에 걸려 창대 아래까지
+		var cm := mat(int(p["curtain"]), 1.0, 0.0, {"rim_enabled": true, "rim": 0.25, "rim_tint": 0.5})
+		var top := ry - 0.035
+		var bot := -h / 2.0 - 0.08
+		for span in [[rx0 + 0.04, -w / 2.0 + 0.12], [w / 2.0 - 0.2, rx1 - 0.03]]:
+			var a: float = span[0]
+			var cw: float = span[1] - a
+			_drape(g, cm, cw, top - bot, 0.03, 0.075, Vector3(a + cw / 2.0, (top + bot) / 2.0, zr), false)
+			var nr := maxi(2, int(round(cw / 0.05)))
+			for i in nr + 1:
+				var rr := ring(g, 0.019, 0.0035, gold, Vector3(a + cw * i / nr, ry, zr))
+				rr.rotation.y = PI / 2.0
+		# 속커튼: 반쯤 비치는 흰 천, 창대 바로 위까지
+		var sm := mat(0xffffff, 1.0, 0.0, {"alpha": 0.42, "cull_off": true})
+		var stop := ry - 0.03
+		var sbot := -h / 2.0 + 0.006
+		for span in [[rx0 + 0.08, -0.4], [0.4, rx1 - 0.06]]:
+			var a: float = span[0]
+			var cw: float = span[1] - a
+			_drape(g, sm, cw, stop - sbot, 0.012, 0.055, Vector3(a + cw / 2.0, (stop + sbot) / 2.0, zs), true)
+	return {"g": g}
+
+
+## 커튼 한 폭: 위는 고리에 잡혀 주름이 얕고, 아래로 갈수록 깊어지며 살짝 퍼진다. thin이면 얇은 한 겹 판
+static func _drape(g: Node3D, m: Material, cw: float, ch: float, amp: float, period: float, pos: Vector3, thin: bool) -> MeshInstance3D:
+	var folds := maxf(2.0, round(cw / period))
+	var f := func(v: Vector3) -> Vector3:
+		var t: float = clampf(0.5 - v.y / ch, 0.0, 1.0)
+		var a: float = amp * (0.45 + 0.55 * smoothstep(0.0, 0.3, t))
+		var ph: float = (v.x / cw + 0.5) * folds * TAU
+		return Vector3(v.x * (1.0 + 0.12 * t), v.y, v.z + sin(ph) * a)
+	var prim: PrimitiveMesh
+	if thin:
+		var q := QuadMesh.new()
+		q.size = Vector2(cw, ch)
+		q.subdivide_width = int(folds) * 6
+		q.subdivide_depth = 8
+		prim = q
+	else:
+		var b := BoxMesh.new()
+		b.size = Vector3(cw, ch, 0.012)
+		b.subdivide_width = int(folds) * 6
+		b.subdivide_height = 8
+		prim = b
+	return mi(g, deformed(prim, f), m, pos)
+
+
+## 유리에 비친 빛: 비스듬한 옅은 띠 두 줄 (투명)
+static func _glass_sheen() -> StandardMaterial3D:
+	if _mats.has("glass_sheen"):
+		return _mats["glass_sheen"]
+	var c0 := Color(1, 1, 1, 0)
+	var gr := Gradient.new()
+	gr.offsets = PackedFloat32Array([0.0, 0.33, 0.37, 0.41, 0.55, 0.57, 0.59, 1.0])
+	gr.colors = PackedColorArray([c0, c0, Color(1, 1, 1, 0.055), c0, c0, Color(1, 1, 1, 0.035), c0, c0])
+	var gt := GradientTexture2D.new()
+	gt.gradient = gr
+	gt.fill_from = Vector2(0, 0)
+	gt.fill_to = Vector2(1, 1)
+	var m := StandardMaterial3D.new()
+	m.albedo_texture = gt
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_mats["glass_sheen"] = m
+	return m
+
+
 static func _fluoro() -> Dictionary:
 	var g := node(null)
 	box(g, Vector3(0.62, 0.04, 0.1), mat(0xdedbd3), Vector3(0, -0.02, 0))
@@ -543,25 +817,70 @@ static func _bulb() -> Dictionary:
 	return {"g": g}
 
 
+## 링 라이트: 벌어진 삼각대와 버팀대 · 고무발 · 두 단 기둥과 조임 손잡이 · 기울기 머리 ·
+## 검은 테 안의 빛나는 확산판 (이름 "ring" — 끄고 켤 때 이 재질의 빛 세기를 바꾼다) ·
+## 가운데 휴대폰 거치대 · 뒤쪽 조절기와 벽 콘센트까지 늘어진 전선. 앞(+Z)이 비추는 쪽
 static func _ring_light() -> Dictionary:
 	var g := node(null)
-	var m := mat(0x222226, 0.4, 0.5)
+	var m := mat(0x1e1e22, 0.42, 0.6)
+	var plastic := mat(0x26262a, 0.65)
+	var rubber := mat(0x101011, 0.95)
+	cyl(g, 0.021, 0.021, 0.07, m, Vector3(0, 0.57, 0), 14)
+	cyl(g, 0.02, 0.02, 0.045, m, Vector3(0, 0.3, 0), 14)
 	for i in range(3):
 		var a := i / 3.0 * TAU
-		var pv := node(g, Vector3(0, 0.55, 0))
-		pv.rotation.y = a
-		var l := cyl(pv, 0.008, 0.008, 0.62, m, Vector3(0.14, -0.27, 0), 6)
-		l.rotation.z = 0.5
-	cyl(g, 0.012, 0.012, 1.1, m, Vector3(0, 1.0, 0), 8)
+		var dir := Vector3(sin(a), 0, cos(a))
+		var top := Vector3(0, 0.55, 0) + dir * 0.02
+		var ft := dir * 0.31 + Vector3(0, 0.02, 0)
+		rod(g, top, ft, 0.0085, m, 8)
+		rod(g, Vector3(0, 0.3, 0) + dir * 0.018, top.lerp(ft, 0.5), 0.0055, m, 6)
+		cyl(g, 0.013, 0.016, 0.02, rubber, Vector3(ft.x, 0.01, ft.z), 10)
+	cyl(g, 0.0135, 0.0135, 0.78, m, Vector3(0, 0.67, 0), 12)
+	cyl(g, 0.019, 0.019, 0.045, plastic, Vector3(0, 1.07, 0), 14)
+	rod(g, Vector3(0, 1.07, 0), Vector3(0.048, 1.07, 0), 0.005, m, 6)
+	sph(g, 0.013, plastic, Vector3(0.054, 1.07, 0), 10)
+	cyl(g, 0.0105, 0.0105, 0.28, m, Vector3(0, 1.21, 0), 12)
+	box(g, Vector3(0.052, 0.035, 0.04), plastic, Vector3(0, 1.345, 0))
+	sph(g, 0.012, plastic, Vector3(0.034, 1.345, 0), 10)
+	var housing := ring(g, 0.228, 0.03, plastic, Vector3(0, 1.6, 0))
+	housing.scale = Vector3(1, 0.55, 1)
 	var rm := StandardMaterial3D.new()
 	rm.albedo_color = Color.WHITE
 	rm.emission_enabled = true
 	rm.emission = Color(1.0, 0.92, 0.94)
 	rm.emission_energy_multiplier = 2.0
-	var r := ring(g, 0.22, 0.022, rm, Vector3(0, 1.6, 0))
+	var r := ring(g, 0.228, 0.021, rm, Vector3(0, 1.6, 0.012))
+	r.scale = Vector3(1, 0.35, 1)
 	r.name = "ring"
-	box(g, Vector3(0.08, 0.15, 0.012), mat(0x111111, 0.3), Vector3(0, 1.6, 0.01))
-	return {"g": g, "foot": Vector2(0.35, 0.35)}
+	# 휴대폰 거치대: 기울기 머리에서 고리 가운데로 올라온 막대 · 집게 · 휴대폰 (화면이 비추는 쪽)
+	rod(g, Vector3(0, 1.36, 0), Vector3(0, 1.375, 0.035), 0.006, m, 6)
+	rod(g, Vector3(0, 1.375, 0.035), Vector3(0, 1.585, 0.035), 0.0055, m, 6)
+	box(g, Vector3(0.1, 0.022, 0.018), plastic, Vector3(0, 1.6, 0.04))
+	for sx in [-1.0, 1.0]:
+		box(g, Vector3(0.01, 0.03, 0.022), plastic, Vector3(sx * 0.045, 1.6, 0.048))
+	box(g, Vector3(0.074, 0.156, 0.009), mat(0x9c7b85, 0.5), Vector3(0, 1.615, 0.053))
+	quad(g, 0.068, 0.148, mat(0x0c0c10, 0.12, 0.2), Vector3(0, 1.615, 0.0576))
+	box(g, Vector3(0.03, 0.03, 0.003), mat(0x1a1a1d, 0.3), Vector3(0.017, 1.672, 0.047))
+	var lens := mat(0x050507, 0.1, 0.5)
+	for v in [Vector3(0.011, 1.678, 0.0455), Vector3(0.011, 1.664, 0.0455), Vector3(0.024, 1.671, 0.0455)]:
+		var ln := cyl(g, 0.0048, 0.0048, 0.002, lens, v, 10)
+		ln.rotation.x = PI / 2.0
+	# 뒤쪽 조절기와 전선: 기둥을 따라 내려가 바닥을 지나 벽 콘센트로
+	var ca := 0.7
+	var ctl := node(g, Vector3(0.228 * sin(ca), 1.6 - 0.228 * cos(ca), -0.027))
+	ctl.rotation.z = ca
+	box(ctl, Vector3(0.07, 0.03, 0.022), plastic, Vector3.ZERO)
+	for i in 3:
+		var bt := cyl(ctl, 0.0045, 0.0045, 0.004, mat(0x45454c, 0.5), Vector3(-0.02 + i * 0.02, 0, -0.012), 8)
+		bt.rotation.x = PI / 2.0
+	var cab := mat(0x141416, 0.6)
+	var pts := [Vector3(0.18, 1.42, -0.03), Vector3(0.06, 1.33, -0.024), Vector3(0.012, 1.2, -0.017), Vector3(0.012, 0.33, -0.017),
+		Vector3(0.04, 0.15, 0.0), Vector3(0.1, 0.02, 0.02), Vector3(0.16, 0.004, 0.032), Vector3(0.97, 0.004, 0.2), Vector3(0.97, 0.18, 0.2)]
+	for i in pts.size() - 1:
+		rod(g, pts[i], pts[i + 1], 0.0032, cab, 6)
+	box(g, Vector3(0.008, 0.11, 0.075), mat(0xf2f0ec, 0.5), Vector3(0.996, 0.2, 0.2))
+	box(g, Vector3(0.03, 0.042, 0.034), mat(0xe8e6e2, 0.5), Vector3(0.977, 0.2, 0.2))
+	return {"g": g, "foot": Vector2(0.62, 0.62)}
 
 
 static func _vanity(p: Dictionary) -> Dictionary:
@@ -582,21 +901,167 @@ static func _vanity(p: Dictionary) -> Dictionary:
 	return {"g": g, "foot": Vector2(w, d)}
 
 
+## 3장 옷 행거: 금빛 관 두 기둥과 위 봉 · 고무발 달린 받침대 · 아래 원목 선반과 신발 상자 ·
+## 봉에 고리를 건 벨벳 옷걸이마다 다른 옷 (니트 · 셔츠 · 재킷 · 블라우스 · 트렌치코트 · 원피스)
 static func _rack(p: Dictionary) -> Dictionary:
 	var g := node(null)
-	var w: float = p.get("w", 1.0)
-	var m := mat(0xc9c9c9, 0.3, 0.7)
-	cyl(g, 0.012, 0.012, 1.5, m, Vector3(-w / 2, 0.75, 0), 8)
-	cyl(g, 0.012, 0.012, 1.5, m, Vector3(w / 2, 0.75, 0), 8)
-	var top := cyl(g, 0.012, 0.012, w, m, Vector3(0, 1.5, 0), 8)
-	top.rotation.z = PI / 2
-	box(g, Vector3(0.06, 0.02, 0.45), m, Vector3(-w / 2, 0.01, 0))
-	box(g, Vector3(0.06, 0.02, 0.45), m, Vector3(w / 2, 0.01, 0))
-	var cols := [0xf2c6d0, 0xffffff, 0x2b2b2b, 0xd9b8a0, 0xa7c4e0, 0xe8e0d0]
-	for i in cols.size():
-		var cl := box(g, Vector3(0.04, 0.7 + (i % 3) * 0.12, 0.42), mat(cols[i], 1.0), Vector3(-w / 2 + 0.1 + i * (w - 0.2) / (cols.size() - 1), 1.12 - (i % 3) * 0.06, 0))
-		cl.rotation.y = (i % 2 - 0.5) * 0.15
+	var w: float = p.get("w", 0.9)
+	var gold := mat(0xd8c08c, 0.3, 0.7)
+	var top := 1.55
+	for sx in [-1.0, 1.0]:
+		var x: float = sx * w / 2.0
+		cyl(g, 0.011, 0.011, top - 0.03, gold, Vector3(x, (top - 0.03) / 2.0 + 0.03, 0), 12)
+		sph(g, 0.016, gold, Vector3(x, top, 0), 12)
+		rod(g, Vector3(x, 0.03, -0.21), Vector3(x, 0.03, 0.21), 0.011, gold, 10)
+		rod(g, Vector3(x, 0.155, -0.16), Vector3(x, 0.155, 0.16), 0.008, gold, 8)
+		for sz in [-1.0, 1.0]:
+			cyl(g, 0.016, 0.018, 0.02, mat(0x1c1c1e, 0.8), Vector3(x, 0.01, sz * 0.21), 12)
+	rod(g, Vector3(-w / 2.0, top, 0), Vector3(w / 2.0, top, 0), 0.012, gold, 12)
+	box(g, Vector3(w - 0.02, 0.022, 0.34), mat(0xc9a27a, 0.6), Vector3(0, 0.174, 0))
+	# 신발 상자 둘 (뚜껑이 조금 크다)
+	for b in [[-0.17, 0xf3cfd6, 0xe6b9c3, 0.05], [0.18, 0xf4f1ec, 0x2a2a2e, -0.07]]:
+		var bn := node(g, Vector3(b[0], 0.185, 0))
+		bn.rotation.y = b[3]
+		box(bn, Vector3(0.3, 0.1, 0.19), mat(b[1], 0.7), Vector3(0, 0.05, 0))
+		box(bn, Vector3(0.306, 0.026, 0.196), mat(b[2], 0.6), Vector3(0, 0.1, 0))
+	var hang := mat(0xe0bcc4, 1.0, 0.0, {"rim_enabled": true, "rim": 0.3, "rim_tint": 0.5})
+	var clothes := [["knit", 0xefe6d8], ["shirt", 0xb9cfe6], ["coat", 0x26262a], ["shirt", 0xf2c6d0], ["long", 0xd2b48c], ["dress", 0xf7f4ef], ["dress", 0xc9a0ad]]
+	var n := clothes.size()
+	for i in n:
+		var gn := node(g, Vector3(-w / 2.0 + 0.07 + i * (w - 0.14) / (n - 1), top - 0.09, 0))
+		gn.rotation.y = sin(i * 2.3) * 0.07
+		var kind: String = clothes[i][0]
+		_hanger(gn, gold, hang, GARMENTS[kind][0] * 0.42, true)
+		_garment(gn, kind, clothes[i][1], i * 1.7)
 	return {"g": g, "foot": Vector2(w, 0.45)}
+
+
+## 옷 종류별 [폭, 길이, 두께, 소매 길이]
+const GARMENTS := {
+	"shirt": [0.42, 0.64, 0.04, 0.5],
+	"dress": [0.36, 0.98, 0.045, 0.0],
+	"coat": [0.48, 0.74, 0.075, 0.56],
+	"long": [0.48, 1.0, 0.08, 0.58],
+	"knit": [0.46, 0.58, 0.085, 0.5],
+}
+
+
+## 옷걸이: 봉에 건 고리 · 목 · 옷 어깨선을 따라 내려가는 두 팔. 원점은 옷 윗단 가운데, 봉 가운데는 y 0.09.
+## rail_x면 봉이 옷의 두께(x) 방향으로, 아니면 옷의 폭(z) 방향으로 지나간다
+static func _hanger(g: Node3D, hook: Material, body: Material, half: float, rail_x: bool) -> void:
+	var rr := ring(g, 0.021, 0.0028, hook, Vector3(0, 0.09, 0))
+	if rail_x:
+		rr.rotation.y = PI / 2.0
+	rod(g, Vector3(0, 0.069, 0), Vector3(0, 0.02, 0), 0.0028, hook, 6)
+	sph(g, 0.009, body, Vector3(0, 0.02, 0), 10)
+	for sz in [-1.0, 1.0]:
+		rod(g, Vector3(0, 0.022, 0), Vector3(0, -0.058, sz * half), 0.0055, body, 8)
+
+
+## 옷걸이에 걸린 옷 한 벌: 어깨는 옷걸이를 따라 처지고 목선이 살짝 파였다. 아래로 갈수록 주름이 늘고
+## 종류마다 허리 · 밑단 폭이 다르다. 소매가 있으면 양 어깨에서 늘어진다. 원점은 윗단 가운데, 폭은 z, 두께는 x
+static func _garment(g: Node3D, kind: String, c: int, sd: float) -> void:
+	var s: Array = GARMENTS[kind]
+	var W: float = s[0]
+	var L: float = s[1]
+	var T: float = s[2]
+	var sl: float = s[3]
+	var m := mat(c, 0.9)
+	var bm := BoxMesh.new()
+	bm.size = Vector3(T, L, W)
+	bm.subdivide_width = 2
+	bm.subdivide_height = 16
+	bm.subdivide_depth = 12
+	var mesh := deformed(bm, func(v):
+		var u: float = v.z / (W / 2.0)
+		var au: float = absf(u)
+		var t: float = 0.5 - v.y / L
+		var y: float = v.y - L / 2.0
+		y += (-0.075 * pow(au, 1.3) - 0.028 * maxf(0.0, 1.0 - au * 4.0)) * (1.0 - smoothstep(0.0, 0.28, t))
+		y += sin(u * 6.0 + sd) * 0.007 * t * t * t
+		return Vector3(_gx(kind, sd, u, t, v.x), y, v.z * _garment_w(kind, t) + sin(t * 5.0 + sd) * 0.004))
+	mi(g, mesh, m, Vector3.ZERO)
+	# 앞면: 재킷 · 코트는 깃 사이 안감 · 앞섶 · 단추 (긴 코트는 허리띠), 셔츠는 깃 · 앞단 · 단추,
+	# 니트는 목둘레와 밑단 고무단, 원피스는 허리 띠
+	var fx := func(u: float, y: float) -> float: return _gx(kind, sd, u, clampf(-y / L, 0.0, 1.0), T / 2.0)
+	match kind:
+		"coat", "long":
+			var dk := mat(_shade(c, 0.4), 0.9)
+			_gpatch(g, kind, sd, -0.03, -0.3, 0.17, 0.0, dk)
+			_gpatch(g, kind, sd, -0.3, -L + 0.012, 0.005, 0.005, dk)
+			for i in 2:
+				sph(g, 0.009, mat(0x1a1a1c, 0.4), Vector3(fx.call(0.08, -0.36 - i * 0.12) + 0.005, -0.36 - i * 0.12, 0.02), 8)
+			if kind == "long":
+				_gpatch(g, kind, sd, -0.42, -0.47, W * 0.9, W * 0.9, mat(_shade(c, 0.15), 0.9))
+		"shirt":
+			_gpatch(g, kind, sd, -0.004, -0.05, 0.16, 0.12, mat(_shade(c, -0.12), 0.9))
+			_gpatch(g, kind, sd, -0.05, -L + 0.012, 0.022, 0.022, mat(_shade(c, 0.08), 0.9))
+			var bt := mat(0xf2efe8, 0.4)
+			for i in 5:
+				sph(g, 0.0055, bt, Vector3(fx.call(0.0, -0.1 - i * 0.1) + 0.005, -0.1 - i * 0.1, 0), 6)
+		"knit":
+			var rib := mat(_shade(c, 0.12), 0.95)
+			_gpatch(g, kind, sd, -L + 0.065, -L + 0.004, W * 0.86, W * 0.86, rib)
+			_gpatch(g, kind, sd, -0.012, -0.045, 0.17, 0.15, rib)
+		"dress":
+			_gpatch(g, kind, sd, -0.29, -0.315, W * 0.74, W * 0.74, mat(_shade(c, 0.15), 0.9))
+	if sl <= 0.0:
+		return
+	var sw := 0.11
+	var sm := BoxMesh.new()
+	sm.size = Vector3(T * 0.75, sl, sw)
+	sm.subdivide_height = 8
+	sm.subdivide_depth = 3
+	var smesh := deformed(sm, func(v):
+		var t: float = 0.5 - v.y / sl
+		return Vector3(v.x * (0.5 + 0.5 * (1.0 - pow(absf(v.z) / (sw / 2.0), 4.0))), v.y - sl / 2.0, v.z * (1.0 - 0.22 * t)))
+	for sz in [-1.0, 1.0]:
+		var sv := mi(g, smesh, m, Vector3(T * 0.15, -0.07, sz * (W / 2.0 + 0.008)))
+		sv.rotation.x = sz * 0.05
+
+
+## 옷의 두께 방향 위치: 가장자리 · 어깨는 얇고, 아래로 갈수록 주름이 깊다 (x: 가운데 면에서의 거리, 앞면은 두께/2)
+static func _gx(kind: String, sd: float, u: float, t: float, x: float) -> float:
+	var au := absf(u)
+	return x * (0.28 + 0.72 * (1.0 - pow(au, 4.0))) * (0.55 + 0.45 * smoothstep(0.0, 0.18, t)) + sin(u * PI * 2.5 + sd * 3.0) * (0.004 + 0.012 * t) * (2.2 if kind == "dress" else 1.0)
+
+
+## 옷 앞면에 붙인 띠 · 삼각형 (깃 · 앞섶 · 허리띠 · 고무단): 높이 y0 → y1에서 폭 w0 → w1, 앞면 굴곡을 따른다
+static func _gpatch(g: Node3D, kind: String, sd: float, y0: float, y1: float, w0: float, w1: float, m: Material) -> void:
+	var s: Array = GARMENTS[kind]
+	var W: float = s[0]
+	var L: float = s[1]
+	var T: float = s[2]
+	var bm := BoxMesh.new()
+	bm.size = Vector3(0.002, 1.0, 1.0)
+	bm.subdivide_height = 6
+	bm.subdivide_depth = 8
+	mi(g, deformed(bm, func(v):
+		var k: float = 0.5 - v.y
+		var y: float = lerpf(y0, y1, k)
+		var t: float = clampf(-y / L, 0.0, 1.0)
+		var z: float = v.z * lerpf(w0, w1, k)
+		var u: float = clampf(z / (W / 2.0 * _garment_w(kind, t)), -1.0, 1.0)
+		return Vector3(_gx(kind, sd, u, t, T / 2.0) + 0.003 + v.x, y, z)), m, Vector3.ZERO)
+
+
+## 같은 색을 k만큼 어둡게 (음수면 밝게)
+static func _shade(c: int, k: float) -> int:
+	var cc := col(c)
+	cc = cc.darkened(k) if k >= 0.0 else cc.lightened(-k)
+	return cc.to_rgba32() >> 8
+
+
+## 옷 종류별 폭 비율 (t: 0 어깨 ~ 1 밑단)
+static func _garment_w(kind: String, t: float) -> float:
+	match kind:
+		"dress":
+			return lerpf(0.95, 0.76, smoothstep(0.0, 0.32, t)) + 0.62 * smoothstep(0.32, 1.0, t)
+		"knit":
+			return lerpf(1.0, 0.96, smoothstep(0.0, 0.8, t)) - 0.08 * smoothstep(0.86, 1.0, t)
+		"shirt":
+			return lerpf(1.0, 0.86, smoothstep(0.0, 0.6, t)) + 0.05 * smoothstep(0.6, 1.0, t)
+	return lerpf(1.0, 0.94, smoothstep(0.0, 0.5, t)) + 0.1 * smoothstep(0.5, 1.0, t)
 
 
 static func _led() -> Dictionary:
@@ -644,16 +1109,25 @@ static func _wall_shelf(p: Dictionary) -> Dictionary:
 	return {"g": g}
 
 
+## 1장 벽에 단 옷 봉: 양 끝 벽 받침 · 철사 옷걸이에 건 회색 맨투맨과 남색 재킷
 static func _rail(p: Dictionary) -> Dictionary:
 	var g := node(null)
 	var w: float = p.get("w", 0.9)
-	var r := cyl(g, 0.01, 0.01, w, mat(0xb5b5b5, 0.3, 0.7), Vector3.ZERO, 8)
-	r.rotation.x = PI / 2
-	var cols := [0x6b6f75, 0x3a4458]
-	for i in cols.size():
-		cyl(g, 0.004, 0.004, 0.06, mat(0x888888, 0.3, 0.7), Vector3(0, -0.03, -w / 2 + 0.25 + i * 0.4), 6)
-		var sh := box(g, Vector3(0.025, 0.5, 0.32), mat(cols[i], 1.0), Vector3(0, -0.33, -w / 2 + 0.25 + i * 0.4))
-		sh.rotation.x = (i - 0.5) * 0.06
+	var steel := mat(0xb5b5b5, 0.3, 0.7)
+	rod(g, Vector3(0, 0, -w / 2.0), Vector3(0, 0, w / 2.0), 0.01, steel, 10)
+	for sz in [-1.0, 1.0]:
+		var z: float = sz * (w / 2.0 - 0.04)
+		rod(g, Vector3(0, 0, z), Vector3(0.058, 0, z), 0.007, steel, 8)
+		var wp := cyl(g, 0.02, 0.02, 0.006, steel, Vector3(0.057, 0, z), 12)
+		wp.rotation.z = PI / 2.0
+	var wire := mat(0x8a8a8a, 0.35, 0.7)
+	var clothes := [["knit", 0x6b6f75], ["coat", 0x3a4458]]
+	for i in clothes.size():
+		var gn := node(g, Vector3(0, -0.09, -w / 2.0 + 0.22 + i * 0.46))
+		gn.rotation.y = PI + (i - 0.5) * 0.08
+		var kind: String = clothes[i][0]
+		_hanger(gn, wire, wire, GARMENTS[kind][0] * 0.42, false)
+		_garment(gn, kind, clothes[i][1], 1.3 + i)
 	return {"g": g}
 
 

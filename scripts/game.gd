@@ -5,7 +5,7 @@ const RoomScript := preload("res://scripts/room.gd")
 const InspectScript := preload("res://scripts/inspect.gd")
 const BoardScript := preload("res://scripts/board.gd")
 const SAVE_PATH := "user://save.json"
-const VERSION := "1.3.4"
+const VERSION := "1.3.5"
 const CONTACT := "eunyool100208@gmail.com"
 
 var EPISODES: Array = []
@@ -100,6 +100,8 @@ func _ready() -> void:
 			at.click_test(test)
 		elif args.has("--hiddentest"):
 			at.hidden_test(test)
+		elif args.has("--furntest"):
+			at.furn_test(test)
 		elif args.has("--titletest"):
 			at.title_test(test)
 		elif args.has("--cleantest"):
@@ -512,22 +514,29 @@ func show_title() -> void:
 		T_.tabs.append(t)
 	col.add_child(tabs)
 	col.add_child(Ui.gap(30))
-	var menu_row := HFlowContainer.new()
-	menu_row.custom_minimum_size = Vector2(470, 0)
-	menu_row.add_theme_constant_override("h_separation", 26)
-	menu_row.add_theme_constant_override("v_separation", 4)
-	var menu := [["설정", open_settings], ["조작법", open_help], ["업데이트 노트", open_updates], ["만든 사람들", func(): fade(show_credits)], ["기록 지우기", _reset_save]]
-	if not OS.has_feature("web"):
-		menu.append(["끝내기", func(): get_tree().quit()])
-	for m in menu:
-		var b := Ui.button(m[0], 17, m[1], Ui.sans, Color("cfc8bc"), Color("efe9df"))
-		menu_row.add_child(Ui.shadow(b))
-		if m[0] == "업데이트 노트" and save.get("seen_notes", "") != VERSION:
-			var nw := Ui.label("NEW", 12, Color("e0715f"), Ui.sans_b)
-			nw.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-			menu_row.add_child(nw)
-	col.add_child(menu_row)
 	root.add_child(col)
+	# 오른쪽 위: 그림이 붙은 메뉴 한 줄 (끝내기는 가는 줄로 떼어 둔다. 기록 지우기는 설정 → 기록에)
+	var nav := Ui.hbox(22)
+	Ui.pin(nav, 1, 0, -56, 30, -1, 1)
+	for m in [["설정", "settings", open_settings], ["조작법", "help", open_help], ["업데이트 노트", "notes", open_updates], ["만든 사람들", "credits", func(): fade(show_credits)]]:
+		var nb := Ui.NavButton.new(m[0], m[1])
+		var cb: Callable = m[2]
+		nb.pressed.connect(func():
+			Sfx.play("ui", 0.5)
+			cb.call())
+		nb.dot = m[1] == "notes" and save.get("seen_notes", "") != VERSION
+		nav.add_child(nb)
+	if not OS.has_feature("web"):
+		var sep := ColorRect.new()
+		sep.color = Color(1, 1, 1, 0.22)
+		sep.custom_minimum_size = Vector2(1, 22)
+		sep.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		sep.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		nav.add_child(sep)
+		var qb := Ui.NavButton.new("끝내기", "quit")
+		qb.pressed.connect(func(): get_tree().quit())
+		nav.add_child(qb)
+	root.add_child(nav)
 	# 오른쪽: 고른 의뢰서를 펼쳐 둔다
 	var holder := Ui.vbox(0)
 	Ui.pin(holder, 1, 0.5, -110, -10, -1, 0)
@@ -721,9 +730,15 @@ func _folder_tab_style() -> StyleBoxFlat:
 
 
 func _reset_save() -> void:
-	confirm("기록을 지울까?", "끝낸 장과 등급이 모두 사라진다.", "지우기", func():
-		save = {"done": {}}
+	confirm("기록을 지울까?", "끝낸 장과 등급이 모두 사라진다. 지우기 전에 설정 → 기록에서 백업 코드를 만들어 두면 나중에 되살릴 수 있다.", "지우기", func():
+		# 끝낸 장 · 등급만 지우고 설정 · 이용 안내 동의 · 본 업데이트 노트는 남긴다
+		var keep := {"done": {}}
+		for k in ["terms_ok", "seen_notes"]:
+			if save.has(k):
+				keep[k] = save[k]
+		save = keep
 		write_save()
+		title_sel = -1
 		show_title())
 
 
@@ -1851,6 +1866,9 @@ func _settings_record(body: VBoxContainer) -> void:
 	b.disabled = stage != "title"
 	if not (OS.has_feature("web") or OS.has_feature("android") or OS.has_feature("ios")):
 		_set_action(body, "저장 폴더", "save.json을 복사해 두면 직접 백업할 수 있다", "폴더 열기", func(): OS.shell_open(OS.get_user_data_dir()))
+	var wb := _set_action(body, "기록 지우기", "끝낸 장과 등급을 모두 지운다" if stage == "title" else "타이틀 화면의 설정에서 할 수 있다", "지우기", _reset_save)
+	wb.disabled = stage != "title"
+	wb.add_theme_color_override("font_color", Ui.RED)
 
 
 func _settings_info(body: VBoxContainer) -> void:
