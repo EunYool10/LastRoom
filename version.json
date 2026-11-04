@@ -1,0 +1,19 @@
+{
+  "version": "1.3.5",
+  "date": "2026-11-04",
+  "notes": [
+    "처음 화면의 메뉴 버튼을 오른쪽 위로 옮기고 알아보기 쉬운 그림을 붙였어요.",
+    "기록 지우기는 이제 설정 → 기록에서 할 수 있어요.",
+    "3장 오피스텔의 창문, 링 라이트, 침대, 옷 행거를 새로 만들었어요."
+  ],
+  "windows": "https://github.com/EunYool10/LastRoom/releases/download/v1.3.5/LastRoom-Setup-1.3.5.exe",
+  "android": "https://github.com/EunYool10/LastRoom/releases/download/v1.3.5/LastRoom-1.3.5-android.apk",
+  "mac": "https://github.com/EunYool10/LastRoom/releases/download/v1.3.5/LastRoom-1.3.5-mac.zip",
+  "sha256": {
+    "windows": "7c98426c6a08e39c86cb00ce3335b5c17aef773c4ccc427a0a5ae99fe14693ea",
+    "android": "3afda7097cbed6c10f110c7391af711c44ead8d5c5a843cfc9c225ccbbd006f9",
+    "mac": "9d1b63f5825d8f72e21371e17f8e9902b512d796b50a9cce77fd87fcb2e87c77"
+  },
+  "page": "https://eunyool10.github.io/LastRoom/",
+  "terms": "2026-11-03"
+}
