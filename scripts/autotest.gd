@@ -1329,3 +1329,28 @@ func hidden_test(o: String) -> void:
 	await _wait(1.2)
 	print("HIDDEN workshop jbox_in_list=", in_list, " opened=", Game.S.opened.get("jbox", false), " got bank+letter=", Game.S.kept.has("bank2") and Game.S.kept.has("letter2"), " has_letter=", ins.has_letter())
 	get_tree().quit()
+
+
+## 타이틀 의뢰 서류철 (--titletest)
+func title_test(o: String) -> void:
+	out = o
+	DirAccess.make_dir_recursive_absolute(out)
+	Game.save.done = {"ep1": {"grade": "S", "score": 92, "choice": "deliver", "best": 92}, "ep2": {"grade": "B", "score": 65, "choice": "burn", "best": 65}}
+	Game.title_sel = -1
+	Game.show_title()
+	await _wait(1.2)
+	print("TITLE default sel=", Game.title_sel)
+	await _shot("title_default")
+	Game._title_pick(0)
+	await _wait(0.3)
+	await _shot("title_done")
+	Game._title_pick(3)
+	await _wait(0.3)
+	await _shot("title_locked")
+	await _key(KEY_UP)
+	await _wait(0.2)
+	print("TITLE after up sel=", Game.title_sel)
+	await _key(KEY_ENTER)
+	await _wait(0.4)
+	print("TITLE enter -> stage=", Game.stage)
+	get_tree().quit()

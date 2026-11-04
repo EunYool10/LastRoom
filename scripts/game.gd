@@ -5,7 +5,7 @@ const RoomScript := preload("res://scripts/room.gd")
 const InspectScript := preload("res://scripts/inspect.gd")
 const BoardScript := preload("res://scripts/board.gd")
 const SAVE_PATH := "user://save.json"
-const VERSION := "1.3.3"
+const VERSION := "1.3.4"
 const CONTACT := "eunyool100208@gmail.com"
 
 var EPISODES: Array = []
@@ -100,6 +100,8 @@ func _ready() -> void:
 			at.click_test(test)
 		elif args.has("--hiddentest"):
 			at.hidden_test(test)
+		elif args.has("--titletest"):
+			at.title_test(test)
 		elif args.has("--cleantest"):
 			at.clean_test(test, ei)
 		elif args.has("--settingstest"):
@@ -481,8 +483,8 @@ func show_title() -> void:
 	var shade := TextureRect.new()
 	var gt := GradientTexture2D.new()
 	var g := Gradient.new()
-	g.offsets = PackedFloat32Array([0.0, 0.45, 1.0])
-	g.colors = PackedColorArray([Color(0, 0, 0, 0.9), Color(0, 0, 0, 0.6), Color(0, 0, 0, 0.05)])
+	g.offsets = PackedFloat32Array([0.0, 0.42, 1.0])
+	g.colors = PackedColorArray([Color(0, 0, 0, 0.92), Color(0, 0, 0, 0.66), Color(0, 0, 0, 0.18)])
 	gt.gradient = g
 	gt.fill_from = Vector2(0, 0)
 	gt.fill_to = Vector2(1, 0)
@@ -492,31 +494,46 @@ func show_title() -> void:
 	Ui.full(shade)
 	shade.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(shade)
-	var col := Ui.vbox(4)
-	Ui.pin(col, 0, 0, 96, 110)
+	# 왼쪽: 제목 · 의뢰 서류철 · 메뉴
+	var col := Ui.vbox(0)
+	Ui.pin(col, 0, 0, 96, 84)
 	col.add_child(Ui.label("특수청소부의 기록", 18, Color("a39b8e"), Ui.serif))
-	col.add_child(Ui.shadow(Ui.label("마지막 방", 88, Color("efe9df"), Ui.serif_b)))
-	col.add_child(Ui.gap(36))
+	col.add_child(Ui.shadow(Ui.label("마지막 방", 84, Color("efe9df"), Ui.serif_b)))
+	col.add_child(Ui.gap(24))
+	col.add_child(Ui.shadow(Ui.label("의뢰 서류철", 13, Color("a39b8e"), Ui.spaced)))
+	col.add_child(Ui.gap(10))
+	if title_sel < 0 or title_sel >= EPISODES.size():
+		title_sel = _title_default_sel()
+	var tabs := Ui.vbox(10)
+	T_ = {"tabs": []}
 	for i in EPISODES.size():
-		col.add_child(_ep_row(i))
+		var t := _case_tab(i)
+		tabs.add_child(t)
+		T_.tabs.append(t)
+	col.add_child(tabs)
 	col.add_child(Ui.gap(30))
-	var menu := [["설정", open_settings], ["조작법", open_help], ["업데이트 노트", open_updates], ["기록 지우기", _reset_save], ["만든 사람들", func(): fade(show_credits)]]
+	var menu_row := HFlowContainer.new()
+	menu_row.custom_minimum_size = Vector2(470, 0)
+	menu_row.add_theme_constant_override("h_separation", 26)
+	menu_row.add_theme_constant_override("v_separation", 4)
+	var menu := [["설정", open_settings], ["조작법", open_help], ["업데이트 노트", open_updates], ["만든 사람들", func(): fade(show_credits)], ["기록 지우기", _reset_save]]
 	if not OS.has_feature("web"):
 		menu.append(["끝내기", func(): get_tree().quit()])
 	for m in menu:
-		var b := Ui.button(m[0], 20, m[1], Ui.serif, Color("b9b1a4"))
-		b.custom_minimum_size = Vector2(160, 0)
+		var b := Ui.button(m[0], 17, m[1], Ui.sans, Color("cfc8bc"), Color("efe9df"))
+		menu_row.add_child(Ui.shadow(b))
 		if m[0] == "업데이트 노트" and save.get("seen_notes", "") != VERSION:
-			var r := Ui.hbox(10)
-			b.custom_minimum_size = Vector2(0, 0)
-			r.add_child(b)
-			var nw := Ui.label("NEW", 13, Color("d9614f"), Ui.sans_b)
+			var nw := Ui.label("NEW", 12, Color("e0715f"), Ui.sans_b)
 			nw.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-			r.add_child(nw)
-			col.add_child(r)
-		else:
-			col.add_child(b)
+			menu_row.add_child(nw)
+	col.add_child(menu_row)
 	root.add_child(col)
+	# 오른쪽: 고른 의뢰서를 펼쳐 둔다
+	var holder := Ui.vbox(0)
+	Ui.pin(holder, 1, 0.5, -110, -10, -1, 0)
+	T_.case = holder
+	root.add_child(holder)
+	_title_refresh()
 	var cw := Ui.label("죽음, 고독사, 약물 오남용 같은 무거운 이야기를 다룹니다. 힘들 때는 언제든 쉬어 가세요.", 14, Color(1, 1, 1, 0.38), Ui.sans)
 	Ui.pin(cw, 0, 1, 96, -34, 1, -1)
 	root.add_child(cw)
@@ -531,27 +548,176 @@ func show_title() -> void:
 		check_update(false)
 
 
-func _ep_row(i: int) -> Control:
+# ───────────────────────────── 타이틀: 의뢰 서류철
+var title_sel := -1
+var T_ := {}
+
+
+## 처음 고를 의뢰: 아직 끝내지 않은 열린 장 (다 끝냈으면 1장)
+func _title_default_sel() -> int:
+	for i in EPISODES.size():
+		if _unlocked(i) and not save.done.has(EPISODES[i].id):
+			return i
+	return 0
+
+
+## 서류철의 의뢰 한 장: 손글씨 번호 · 제목 · 장소, 끝낸 장은 둥근 등급 도장
+func _case_tab(i: int) -> Button:
 	var E: Dictionary = EPISODES[i]
 	var open := _unlocked(i)
 	var done = save.done.get(E.id)
-	var row := Ui.hbox(18)
-	var mark := Ui.label("—", 26, Ui.ACCENT, Ui.serif)
-	mark.modulate.a = 0.0
-	row.add_child(mark)
-	var t := "%d장   %s" % [int(E.no), E.title] if open else "%d장   ……" % int(E.no)
-	var b := Ui.button(t, 30, func(): show_brief(E), Ui.serif_b, Color("e6e1d8") if open else Color(1, 1, 1, 0.25))
-	b.disabled = not open
-	b.custom_minimum_size = Vector2(300, 0)
-	row.add_child(b)
-	var info: String = E.place if open else "앞 장을 마쳐야 열린다"
+	var b := Ui.HitButton.new()
+	b.flat = true
+	b.focus_mode = Control.FOCUS_NONE
+	b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	b.custom_minimum_size = Vector2(470, 64)
+	var strip := Ui.panel(Ui.paper_box(false, 14))
+	strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	Ui.full(strip)
+	strip.offset_right = -28
+	var h := Ui.hbox(14)
+	h.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var no := Ui.label("%02d" % int(E.no), 30, Ui.BLUE_INK if open else Ui.INK_DIM, Ui.hand)
+	no.custom_minimum_size = Vector2(40, 0)
+	no.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	h.add_child(no)
+	var tv := Ui.vbox(0)
+	tv.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tv.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	tv.add_child(Ui.label(E.title if open else "봉인된 의뢰", 21, Ui.INK if open else Ui.INK_DIM, Ui.serif_b))
+	tv.add_child(Ui.label(E.place if open else "앞 장을 마치면 열린다", 13, Ui.INK_DIM, Ui.sans))
+	h.add_child(Ui.expand(tv))
 	if done != null:
-		info += "      %s등급 · 편지를 %s" % [done.grade, "태웠다" if done.choice == "burn" else "전했다"]
-	var il := Ui.label(info, 17, Color("9b9387") if done == null else Color("c9b48a"), Ui.sans)
-	row.add_child(il)
-	b.mouse_entered.connect(func(): mark.modulate.a = 1.0 if open else 0.0)
-	b.mouse_exited.connect(func(): mark.modulate.a = 0.0)
-	return row
+		var st := Ui.RoundStamp.new(str(done.grade), 44.0)
+		st.rotation = deg_to_rad(-9)
+		st.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		h.add_child(st)
+	strip.add_child(h)
+	# 고른 의뢰: 서류철에서 오른쪽으로 빼낸 것처럼, 왼쪽에 빨간 펜 줄
+	var mark := ColorRect.new()
+	mark.color = Color(Ui.RED, 0.85)
+	mark.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	mark.anchor_bottom = 1.0
+	mark.offset_left = 22
+	mark.offset_right = 27
+	b.add_child(strip)
+	b.add_child(mark)
+	if not open:
+		strip.modulate = Color(1, 1, 1, 0.62)
+	b.pressed.connect(func(): _title_pick(i))
+	b.mouse_entered.connect(func():
+		if i != title_sel:
+			strip.modulate = Color(1.06, 1.06, 1.06, strip.modulate.a))
+	b.mouse_exited.connect(func(): strip.modulate = Color(1, 1, 1, 0.62 if not open else 1.0))
+	b.set_meta("strip", strip)
+	b.set_meta("mark", mark)
+	return b
+
+
+func _title_pick(i: int) -> void:
+	if stage != "title" or not T_.has("tabs") or i < 0 or i >= EPISODES.size():
+		return
+	if i != title_sel:
+		Sfx.play("paper", 0.3)
+	title_sel = i
+	_title_refresh()
+
+
+## 고른 의뢰를 빼내고, 오른쪽에 의뢰서를 펼친다
+func _title_refresh() -> void:
+	for k in T_.tabs.size():
+		var b: Button = T_.tabs[k]
+		var strip: Control = b.get_meta("strip")
+		var on: bool = k == title_sel
+		strip.offset_left = 22.0 if on else 0.0
+		strip.offset_right = -6.0 if on else -28.0
+		(b.get_meta("mark") as Control).visible = on
+	var holder: VBoxContainer = T_.case
+	Ui.clear(holder)
+	var E: Dictionary = EPISODES[title_sel]
+	var open := _unlocked(title_sel)
+	var done = save.done.get(E.id)
+	# 서류철 꼬리표
+	var tab := Ui.panel(_folder_tab_style())
+	tab.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	tab.add_child(Ui.label("의뢰 %02d" % int(E.no), 13, Color("3a3128"), Ui.spaced))
+	holder.add_child(tab)
+	var sheet := Ui.panel(Ui.paper_box(false, 40))
+	sheet.custom_minimum_size = Vector2(620, 0)
+	var v := Ui.vbox(8)
+	if open:
+		var head := Ui.hbox(0)
+		head.add_child(Ui.expand(Ui.label("작업 의뢰서", 14, Ui.INK_DIM, Ui.spaced)))
+		head.add_child(Ui.label(str(E.get("date", "")), 14, Ui.INK_DIM, Ui.sans))
+		v.add_child(head)
+		v.add_child(Ui.label("%d장 · %s" % [int(E.no), E.title], 38, Ui.INK, Ui.serif_b))
+		v.add_child(Ui.label(E.place, 19, Ui.INK_DIM, Ui.serif))
+		v.add_child(Ui.rule(0.5, 2))
+		var tg := Ui.label(str(E.get("tagline", "")), 30, Ui.BLUE_INK, Ui.hand, true)
+		tg.custom_minimum_size = Vector2(540, 0)
+		v.add_child(tg)
+		v.add_child(Ui.gap(4))
+		var B: Dictionary = E.get("brief", {})
+		var grid := GridContainer.new()
+		grid.columns = 2
+		grid.add_theme_constant_override("h_separation", 22)
+		grid.add_theme_constant_override("v_separation", 6)
+		for kv in [["고인", B.get("deceased", "")], ["의뢰인", B.get("client", "")]]:
+			grid.add_child(Ui.label(kv[0], 14, Ui.INK_DIM, Ui.sans))
+			var val := Ui.label(kv[1], 17, Ui.INK, Ui.serif, true)
+			val.custom_minimum_size = Vector2(440, 0)
+			grid.add_child(val)
+		v.add_child(grid)
+		v.add_child(Ui.gap(8))
+		v.add_child(Ui.rule(0.15))
+		var foot := Ui.hbox(18)
+		if done != null:
+			var st := Ui.RoundStamp.new(str(done.grade), 76.0)
+			st.rotation = deg_to_rad(-10)
+			foot.add_child(st)
+			var dv := Ui.vbox(2)
+			dv.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			dv.add_child(Ui.label("작업 완료 · 편지를 %s" % ("태웠다" if done.choice == "burn" else "전했다"), 17, Ui.INK, Ui.serif_b))
+			dv.add_child(Ui.label("최고 %d점" % int(done.get("best", done.get("score", 0))), 15, Ui.INK_DIM, Ui.sans))
+			foot.add_child(Ui.expand(dv))
+		else:
+			var nl := Ui.label("아직 맡지 않은 의뢰다.", 16, Ui.INK_DIM, Ui.serif)
+			nl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			foot.add_child(Ui.expand(nl))
+		var go := Ui.form_button("다시 맡기  ▸" if done != null else "이 의뢰 맡기  ▸", 18, func(): show_brief(E))
+		go.custom_minimum_size = Vector2(170, 50)
+		go.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		foot.add_child(go)
+		v.add_child(foot)
+	else:
+		v.add_child(Ui.label("봉인된 의뢰", 14, Ui.INK_DIM, Ui.spaced))
+		v.add_child(Ui.label("%d장 · ……" % int(E.no), 38, Ui.INK_DIM, Ui.serif_b))
+		v.add_child(Ui.rule(0.5, 2))
+		var lk := Ui.hbox(18)
+		var lt := Ui.label("앞 장의 의뢰를 마치면 서류가 열린다.", 18, Ui.INK, Ui.serif, true)
+		lt.custom_minimum_size = Vector2(380, 0)
+		lt.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		lk.add_child(Ui.expand(lt))
+		var seal := Ui.stamp("봉인", 30)
+		seal.rotation = deg_to_rad(-12)
+		lk.add_child(seal)
+		v.add_child(Ui.gap(10))
+		v.add_child(lk)
+		v.add_child(Ui.gap(10))
+	sheet.add_child(v)
+	holder.add_child(sheet)
+
+
+func _folder_tab_style() -> StyleBoxFlat:
+	var s := StyleBoxFlat.new()
+	s.bg_color = Color("bfae8b")
+	s.corner_radius_top_left = 6
+	s.corner_radius_top_right = 6
+	s.content_margin_left = 16
+	s.content_margin_right = 16
+	s.content_margin_top = 6
+	s.content_margin_bottom = 4
+	return s
 
 
 func _reset_save() -> void:
@@ -1098,6 +1264,19 @@ func _input(event: InputEvent) -> void:
 			elif stage == "credits":
 				fade(show_title)
 				get_viewport().set_input_as_handled()
+		elif stage == "title" and T_.has("tabs"):
+			# 의뢰 서류철: ↑ ↓ 로 고르고 Enter로 맡는다
+			match event.physical_keycode:
+				KEY_UP, KEY_W:
+					_title_pick(wrapi(title_sel - 1, 0, EPISODES.size()))
+					get_viewport().set_input_as_handled()
+				KEY_DOWN, KEY_S:
+					_title_pick(wrapi(title_sel + 1, 0, EPISODES.size()))
+					get_viewport().set_input_as_handled()
+				KEY_ENTER, KEY_KP_ENTER, KEY_SPACE:
+					if _unlocked(title_sel):
+						show_brief(EPISODES[title_sel])
+					get_viewport().set_input_as_handled()
 
 
 # ───────────────────────────── 만든 사람들

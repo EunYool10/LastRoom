@@ -587,3 +587,24 @@ static func board_box() -> StyleBoxFlat:
 class HitButton extends Button:
 	func _has_point(p: Vector2) -> bool:
 		return Rect2(Vector2(-16, -4), size + Vector2(32, 8)).has_point(p)
+
+
+## 둥근 도장: 겹테두리 원 안에 글자 (끝낸 의뢰의 등급)
+class RoundStamp extends Control:
+	var text := ""
+	var ink := Color(0.66, 0.2, 0.16, 0.86)
+
+	func _init(t: String, d := 48.0) -> void:
+		text = t
+		custom_minimum_size = Vector2(d, d)
+		pivot_offset = Vector2(d, d) * 0.5
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func _draw() -> void:
+		var c := size / 2.0
+		var r := minf(size.x, size.y) * 0.5 - 2.0
+		draw_arc(c, r, 0, TAU, 48, ink, maxf(2.0, r * 0.09), true)
+		draw_arc(c, r * 0.8, 0, TAU, 48, Color(ink, ink.a * 0.65), maxf(1.0, r * 0.04), true)
+		var fs := int(r * 1.0)
+		var w := Ui.serif_b.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+		draw_string(Ui.serif_b, c + Vector2(-w / 2.0, fs * 0.36), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, ink)
