@@ -618,6 +618,51 @@ class HitButton extends Button:
 		return Rect2(Vector2(-16, -4), size + Vector2(32, 8)).has_point(p)
 
 
+## 작업 일지의 한 줄 바탕: 고른 줄은 번호에 빨간 펜 동그라미 + 노란 형광펜, 올린 줄은 옅은 잉크.
+## 줄 아래에는 점선 (마지막 줄은 없음). num_cx: 번호 가운데, x_from: 형광펜이 시작하는 곳
+class Marker extends Control:
+	var level := 0
+	var last := false
+	var num_cx := 41.0
+	var x_from := 72.0
+	var _seed := 0.0
+
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_seed = randf() * 10.0
+
+	func set_level(v: int) -> void:
+		level = v
+		queue_redraw()
+
+	func _draw() -> void:
+		if not last:
+			draw_dashed_line(Vector2(0, size.y - 1.0), Vector2(size.x, size.y - 1.0), Color(Ui.INK, 0.28), 1.0, 3.0)
+		if level == 1:
+			draw_rect(Rect2(x_from, 7.0, size.x - x_from - 12.0, size.y - 14.0), Color(Ui.INK, 0.05))
+		if level < 2:
+			return
+		var x0 := x_from
+		var x1 := size.x - 12.0
+		var pts := PackedVector2Array()
+		var n := 20
+		for i in n + 1:
+			var f := float(i) / n
+			pts.append(Vector2(lerpf(x0 + 3.0, x1, f), 10.0 + sin(f * 9.0 + _seed) * 1.5))
+		for i in range(n, -1, -1):
+			var f := float(i) / n
+			pts.append(Vector2(lerpf(x0, x1 - 4.0, f), size.y - 11.0 + sin(f * 7.0 + _seed * 1.3) * 1.5))
+		draw_colored_polygon(pts, Color(0.98, 0.82, 0.24, 0.36))
+		var c := Vector2(num_cx, size.y * 0.5)
+		var ring := PackedVector2Array()
+		var m := 40
+		for i in m + 6:
+			var a := -2.0 + TAU * float(i) / m
+			var w := 1.0 + 0.06 * sin(a * 2.0 + _seed) + 0.05 * float(i) / m
+			ring.append(c + Vector2(cos(a) * 25.0 * w, sin(a) * 21.0 * w))
+		draw_polyline(ring, Color(Ui.RED, 0.8), 2.2, true)
+
+
 ## 둥근 도장: 겹테두리 원 안에 글자 (끝낸 의뢰의 등급)
 class RoundStamp extends Control:
 	var text := ""

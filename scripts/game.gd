@@ -5,7 +5,7 @@ const RoomScript := preload("res://scripts/room.gd")
 const InspectScript := preload("res://scripts/inspect.gd")
 const BoardScript := preload("res://scripts/board.gd")
 const SAVE_PATH := "user://save.json"
-const VERSION := "1.3.5"
+const VERSION := "1.3.6"
 const CONTACT := "eunyool100208@gmail.com"
 
 var EPISODES: Array = []
@@ -501,18 +501,35 @@ func show_title() -> void:
 	Ui.pin(col, 0, 0, 96, 84)
 	col.add_child(Ui.label("특수청소부의 기록", 18, Color("a39b8e"), Ui.serif))
 	col.add_child(Ui.shadow(Ui.label("마지막 방", 84, Color("efe9df"), Ui.serif_b)))
-	col.add_child(Ui.gap(24))
-	col.add_child(Ui.shadow(Ui.label("의뢰 서류철", 13, Color("a39b8e"), Ui.spaced)))
-	col.add_child(Ui.gap(10))
+	col.add_child(Ui.gap(28))
 	if title_sel < 0 or title_sel >= EPISODES.size():
 		title_sel = _title_default_sel()
-	var tabs := Ui.vbox(10)
+	# 의뢰 서류철: 한 장짜리 작업 일지. 머리에 끝낸 의뢰 수, 아래로 의뢰가 한 줄씩
+	var ps := Ui.paper_box(false, 0)
+	ps.content_margin_top = 18
+	ps.content_margin_bottom = 6
+	var sheet := Ui.panel(ps)
+	var sv := Ui.vbox(0)
+	var head := Ui.hbox(0)
+	var hm := MarginContainer.new()
+	for k in [["margin_left", 22], ["margin_right", 24], ["margin_bottom", 10]]:
+		hm.add_theme_constant_override(k[0], k[1])
+	head.add_child(Ui.expand(Ui.label("의뢰 서류철", 13, Ui.INK_DIM, Ui.spaced)))
+	var nd := 0
+	for E in EPISODES:
+		if save.done.has(E.id):
+			nd += 1
+	head.add_child(Ui.label("끝낸 의뢰  %d / %d" % [nd, EPISODES.size()], 13, Ui.INK_DIM, Ui.sans))
+	hm.add_child(head)
+	sv.add_child(hm)
+	sv.add_child(Ui.rule(0.45, 2))
 	T_ = {"tabs": []}
 	for i in EPISODES.size():
 		var t := _case_tab(i)
-		tabs.add_child(t)
+		sv.add_child(t)
 		T_.tabs.append(t)
-	col.add_child(tabs)
+	sheet.add_child(sv)
+	col.add_child(sheet)
 	col.add_child(Ui.gap(30))
 	root.add_child(col)
 	# 오른쪽 위: 그림이 붙은 메뉴 한 줄 (끝내기는 가는 줄로 떼어 둔다. 기록 지우기는 설정 → 기록에)
@@ -570,56 +587,66 @@ func _title_default_sel() -> int:
 	return 0
 
 
-## 서류철의 의뢰 한 장: 손글씨 번호 · 제목 · 장소, 끝낸 장은 둥근 등급 도장
+## 작업 일지의 한 줄: 손글씨 번호 | 빨간 여백선 | 제목 · 장소 | 끝낸 의뢰는 등급 도장,
+## 아직 안 맡은 의뢰는 빨간 펜 '새 의뢰', 잠긴 의뢰는 봉인. 줄 전체가 눌린다
 func _case_tab(i: int) -> Button:
 	var E: Dictionary = EPISODES[i]
 	var open := _unlocked(i)
 	var done = save.done.get(E.id)
-	var b := Ui.HitButton.new()
+	var b := Button.new()
 	b.flat = true
 	b.focus_mode = Control.FOCUS_NONE
 	b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
-	b.custom_minimum_size = Vector2(470, 64)
-	var strip := Ui.panel(Ui.paper_box(false, 14))
-	strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	Ui.full(strip)
-	strip.offset_right = -28
-	var h := Ui.hbox(14)
+	b.custom_minimum_size = Vector2(500, 72)
+	var mk := Ui.Marker.new()
+	mk.last = i == EPISODES.size() - 1
+	Ui.full(mk)
+	b.add_child(mk)
+	var h := Ui.hbox(0)
 	h.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var no := Ui.label("%02d" % int(E.no), 30, Ui.BLUE_INK if open else Ui.INK_DIM, Ui.hand)
-	no.custom_minimum_size = Vector2(40, 0)
+	Ui.full(h)
+	h.offset_left = 18
+	h.offset_right = -22
+	var no := Ui.label("%02d" % int(E.no), 28, Ui.BLUE_INK if open else Color(Ui.INK, 0.32), Ui.hand)
+	no.custom_minimum_size = Vector2(46, 0)
+	no.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	no.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	h.add_child(no)
-	var tv := Ui.vbox(0)
+	var ml := ColorRect.new()
+	ml.color = Color(Ui.RED, 0.42)
+	ml.custom_minimum_size = Vector2(2, 0)
+	ml.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	h.add_child(ml)
+	var sp := Control.new()
+	sp.custom_minimum_size = Vector2(18, 0)
+	sp.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	h.add_child(sp)
+	var tv := Ui.vbox(2)
 	tv.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	tv.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	tv.add_child(Ui.label(E.title if open else "봉인된 의뢰", 21, Ui.INK if open else Ui.INK_DIM, Ui.serif_b))
-	tv.add_child(Ui.label(E.place if open else "앞 장을 마치면 열린다", 13, Ui.INK_DIM, Ui.sans))
+	tv.add_child(Ui.label(E.title if open else "봉인된 의뢰", 21, Ui.INK if open else Color(Ui.INK, 0.42), Ui.serif_b))
+	tv.add_child(Ui.label(E.place if open else "앞 장을 마치면 열린다", 13, Ui.INK_DIM if open else Color(Ui.INK, 0.36), Ui.sans))
 	h.add_child(Ui.expand(tv))
+	var st: Control
 	if done != null:
-		var st := Ui.RoundStamp.new(str(done.grade), 44.0)
-		st.rotation = deg_to_rad(-9)
-		st.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		h.add_child(st)
-	strip.add_child(h)
-	# 고른 의뢰: 서류철에서 오른쪽으로 빼낸 것처럼, 왼쪽에 빨간 펜 줄
-	var mark := ColorRect.new()
-	mark.color = Color(Ui.RED, 0.85)
-	mark.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	mark.anchor_bottom = 1.0
-	mark.offset_left = 22
-	mark.offset_right = 27
-	b.add_child(strip)
-	b.add_child(mark)
-	if not open:
-		strip.modulate = Color(1, 1, 1, 0.62)
+		st = Ui.RoundStamp.new(str(done.grade), 42.0)
+	elif open:
+		st = Ui.label("새 의뢰", 22, Color(Ui.RED, 0.85), Ui.hand)
+	else:
+		st = Ui.stamp("봉인", 13)
+		st.modulate = Color(1, 1, 1, 0.7)
+	st.rotation = deg_to_rad(-8)
+	st.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	h.add_child(st)
+	b.add_child(h)
+	mk.num_cx = 18.0 + 23.0
+	mk.x_from = 18.0 + 46.0 + 8.0
 	b.pressed.connect(func(): _title_pick(i))
 	b.mouse_entered.connect(func():
 		if i != title_sel:
-			strip.modulate = Color(1.06, 1.06, 1.06, strip.modulate.a))
-	b.mouse_exited.connect(func(): strip.modulate = Color(1, 1, 1, 0.62 if not open else 1.0))
-	b.set_meta("strip", strip)
-	b.set_meta("mark", mark)
+			mk.set_level(1))
+	b.mouse_exited.connect(func(): mk.set_level(2 if i == title_sel else 0))
+	b.set_meta("mk", mk)
 	return b
 
 
@@ -632,15 +659,11 @@ func _title_pick(i: int) -> void:
 	_title_refresh()
 
 
-## 고른 의뢰를 빼내고, 오른쪽에 의뢰서를 펼친다
+## 고른 의뢰에 동그라미와 형광펜을 긋고, 오른쪽에 의뢰서를 펼친다
 func _title_refresh() -> void:
 	for k in T_.tabs.size():
 		var b: Button = T_.tabs[k]
-		var strip: Control = b.get_meta("strip")
-		var on: bool = k == title_sel
-		strip.offset_left = 22.0 if on else 0.0
-		strip.offset_right = -6.0 if on else -28.0
-		(b.get_meta("mark") as Control).visible = on
+		(b.get_meta("mk") as Ui.Marker).set_level(2 if k == title_sel else 0)
 	var holder: VBoxContainer = T_.case
 	Ui.clear(holder)
 	var E: Dictionary = EPISODES[title_sel]
