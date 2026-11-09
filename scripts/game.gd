@@ -5,7 +5,7 @@ const RoomScript := preload("res://scripts/room.gd")
 const InspectScript := preload("res://scripts/inspect.gd")
 const BoardScript := preload("res://scripts/board.gd")
 const SAVE_PATH := "user://save.json"
-const VERSION := "1.4.1"
+const VERSION := "1.4.2"
 const CONTACT := "eunyool100208@gmail.com"
 
 var EPISODES: Array = []
@@ -24,6 +24,13 @@ var save_path := SAVE_PATH
 var testing := false
 var stage := ""
 var world: Node = null
+## 시작 화면 배경: 지금 방 번호, 만들고 있는 다음 방, 바꿀 때 어두워지는 막
+const TITLE_FADE_OUT := 0.9
+const TITLE_FADE_IN := 1.6
+var title_i := 0
+var title_next: Node = null
+var title_fade: ColorRect
+var title_swapping := false
 var board: Control = null
 var paused := false
 var modal_open := false
@@ -116,6 +123,14 @@ func _ready() -> void:
 			at.vm_sheet(test)
 		elif args.has("--siteshots"):
 			at.site_shots()
+		elif args.has("--titlebg"):
+			at.title_bg_test(test)
+		elif args.has("--overlapcheck"):
+			at.overlap_check()
+		elif args.has("--openshots"):
+			at.opening_shots(test)
+		elif args.has("--titleprobe"):
+			at.title_build_probe()
 		elif args.has("--roomshots"):
 			at.room_shots(test, ei if args.has("--one") else -1)
 		elif args.has("--modelsheet"):
@@ -502,6 +517,48 @@ func _unlocked(i: int) -> bool:
 	return i == 0 or save.done.has(EPISODES[i - 1].id) or save.done.has(EPISODES[i].id)
 
 
+## 시작 화면 배경: 카메라가 방을 왼쪽에서 오른쪽으로 훑고 나면 어두워졌다가 다음 장의 방으로 넘어간다
+func _title_bg_stop() -> void:
+	if is_instance_valid(title_next):
+		title_next.cancel_background()
+	title_next = null
+	title_swapping = false
+
+
+func _title_bg_tick() -> void:
+	if stage != "title":
+		if title_next != null or title_swapping:
+			_title_bg_stop()
+		return
+	if world == null or not world.has_method("shot_left") or title_swapping or not is_instance_valid(title_fade):
+		return
+	if title_next == null:
+		if world.t > 0.05:
+			title_next = RoomScript.new()
+			add_child(title_next)
+			title_next.build_background(EPISODES[(title_i + 1) % EPISODES.size()], _new_state())
+		return
+	if title_next.bg_done and world.shot_left() <= TITLE_FADE_OUT:
+		title_swapping = true
+		var tw := title_fade.create_tween()
+		tw.tween_property(title_fade, "color:a", 1.0, TITLE_FADE_OUT)
+		tw.tween_callback(_title_bg_swap)
+		tw.tween_interval(0.12)
+		tw.tween_property(title_fade, "color:a", 0.0, TITLE_FADE_IN)
+		tw.tween_callback(func(): title_swapping = false)
+
+
+func _title_bg_swap() -> void:
+	if stage != "title" or not is_instance_valid(title_next):
+		return
+	world.queue_free()
+	world = title_next
+	title_next = null
+	title_i = (title_i + 1) % EPISODES.size()
+	world.show_background()
+	apply_view()
+
+
 func show_title() -> void:
 	stage = "title"
 	_unpause()
@@ -509,10 +566,16 @@ func show_title() -> void:
 	if board:
 		board.queue_free()
 		board = null
+	_title_bg_stop()
 	var pv := RoomScript.new()
 	_set_world(pv)
-	pv.setup(EPISODES[0], _new_state(), true)
+	pv.setup(EPISODES[title_i], _new_state(), true)
 	var root := _new_screen()
+	title_fade = ColorRect.new()
+	title_fade.color = Color(0, 0, 0, 0)
+	Ui.full(title_fade)
+	title_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(title_fade)
 	var shade := TextureRect.new()
 	var gt := GradientTexture2D.new()
 	var g := Gradient.new()
@@ -1280,6 +1343,7 @@ func add_clue(id: String) -> void:
 
 
 func _process(dt: float) -> void:
+	_title_bg_tick()
 	if say_t > 0.0:
 		say_t -= dt
 		if say_t <= 0.0:

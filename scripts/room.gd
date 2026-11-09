@@ -10,6 +10,10 @@ const RAY_MASK := 31
 const NECK_UP := 0.1
 const NECK_BACK := 0.08
 const WALK := 1.45
+const FLASH_E := 2.2
+## 시작 화면 카메라가 도는 빠르기 (라디안/초), 배경을 만들 때 한 프레임에 쓸 시간 (ms)
+const PAN_SPEED := 0.085
+const BG_SLICE_MS := 6
 const STRIDE := 0.72
 
 var ep: Dictionary
@@ -33,6 +37,7 @@ var envs: Array = []
 var stains: Array = []
 var lights: Array = []
 var flies: Array = []
+var walkers: Array = []
 
 var tool := 1
 var using := false
@@ -63,6 +68,14 @@ var crouch := 0.0
 var crouch_toggle := false
 var hint_said := false
 var trigger: Node3D
+## 시작 화면 배경: 아직 안 보이는 방 / 다 만들었는지 / 만들다 취소 / 카메라가 왼쪽에서 오른쪽으로 도는 범위
+var bg_wait := false
+var bg_done := false
+var bg_cancel := false
+var _bg_t := 0
+var shot_l := 0.5
+var shot_r := -0.5
+var shot_len := 12.0
 var nozzle := Vector3.ZERO
 var step_n := 0
 var spray_t := 0.0
@@ -103,6 +116,8 @@ func setup(e: Dictionary, state: Dictionary, is_preview := false) -> void:
 
 
 func _exit_tree() -> void:
+	if is_instance_valid(world_env) and world_env.get_parent() == null:
+		world_env.free()
 	if not preview:
 		for n in ["spray", "scrub", "flies", "hum", "amb"]:
 			Sfx.set_loop(n, 0.0)
@@ -138,7 +153,8 @@ func _build_env() -> void:
 	Game.apply_quality_env(e)
 	world_env = WorldEnvironment.new()
 	world_env.environment = e
-	add_child(world_env)
+	if not bg_wait:
+		add_child(world_env)
 
 
 func _static_box(size: Vector3, pos: Vector3, layer := L_SOLID, parent: Node = self) -> StaticBody3D:
@@ -193,14 +209,31 @@ func _build_shell() -> void:
 	var walls := [[W, Vector3(0, H / 2, -D / 2), 0.0], [W, Vector3(0, H / 2, D / 2), PI], [D, Vector3(-W / 2, H / 2, 0), PI / 2], [D, Vector3(W / 2, H / 2, 0), -PI / 2]]
 	for i in walls.size():
 		var wd: Array = walls[i]
-		var q := Build.sheet(self, wd[0], H, "wall", _surface_mat("%s_wall%d" % [k, i], 0.92, ""), wd[1], 2.4)
+		var wall_m := _surface_mat("%s_wall%d" % [k, i], 0.92, "")
+		var hole := _wall_hole(i)
+		var q: MeshInstance3D
+		if hole.size.x > 0.0:
+			q = Build.wall_holed(self, wd[0], H, hole, wall_m, wd[1], 2.4)
+		else:
+			q = Build.sheet(self, wd[0], H, "wall", wall_m, wd[1], 2.4)
 		q.rotation.y = wd[2]
 		var n := Vector3(sin(wd[2]), 0, cos(wd[2]))
-		# 걸레받이: 몸판과 위로 깎인 턱
-		var b := Build.rbox(self, Vector3(wd[0], 0.07, 0.015), 0.003, bb, Vector3(wd[1].x, 0.035, wd[1].z) + n * 0.0075)
-		b.rotation.y = wd[2]
-		var b2 := Build.rbox(self, Vector3(wd[0], 0.012, 0.02), 0.004, bb2, Vector3(wd[1].x, 0.074, wd[1].z) + n * 0.01)
-		b2.rotation.y = wd[2]
+		var along := Vector3(cos(wd[2]), 0, -sin(wd[2]))
+		# 걸레받이: 몸판과 위로 깎인 턱. 문이 있는 벽은 문 양옆만
+		var hw: float = float(wd[0]) / 2.0
+		var spans := [[-hw, hw]]
+		if i == 1:
+			spans = [[-hw, hole.position.x - 0.065], [hole.end.x + 0.065, hw]]
+		for sp in spans:
+			var l0: float = sp[0]
+			var l1: float = sp[1]
+			if l1 - l0 < 0.02:
+				continue
+			var c: Vector3 = wd[1] + along * (l0 + l1) / 2.0
+			var b := Build.rbox(self, Vector3(l1 - l0, 0.07, 0.015), 0.003, bb, Vector3(c.x, 0.035, c.z) + n * 0.0075)
+			b.rotation.y = wd[2]
+			var b2 := Build.rbox(self, Vector3(l1 - l0, 0.012, 0.02), 0.004, bb2, Vector3(c.x, 0.074, c.z) + n * 0.01)
+			b2.rotation.y = wd[2]
 	_static_box(Vector3(W + 0.4, 0.2, D + 0.4), Vector3(0, -0.1, 0))
 	_static_box(Vector3(W + 0.4, 0.2, D + 0.4), Vector3(0, H + 0.1, 0))
 	_static_box(Vector3(W + 0.4, H, 0.2), Vector3(0, H / 2, -D / 2 - 0.1))
@@ -208,6 +241,19 @@ func _build_shell() -> void:
 	_static_box(Vector3(0.2, H, D + 0.4), Vector3(-W / 2 - 0.1, H / 2, 0))
 	_static_box(Vector3(0.2, H, D + 0.4), Vector3(W / 2 + 0.1, H / 2, 0))
 	_build_fixtures()
+
+
+## 벽에 뚫을 구멍: 뒷벽은 창문, 앞벽은 문. 벽 가운데를 원점으로 한 사각형
+func _wall_hole(i: int) -> Rect2:
+	if i == 1:
+		var o := Furn.door_opening()
+		return Rect2(-float(R.door.x) - o.x / 2.0, -H / 2.0, o.x, o.y)
+	if i == 0:
+		for f in R.furniture:
+			if f.t == "window" and absf(float(f.z) + D / 2.0) < 0.06:
+				var w_o := Furn.window_opening(f.get("p", {}))
+				return Rect2(float(f.x) - w_o.x / 2.0, float(f.y) - H / 2.0 - w_o.y / 2.0, w_o.x, w_o.y)
+	return Rect2()
 
 
 ## 스위치 · 콘센트 · 천장 설비 (장마다 가구를 피한 자리)
@@ -245,7 +291,7 @@ func _ceil_fixture(res: Dictionary, x: float, z: float) -> void:
 func _build_fixtures() -> void:
 	var no := int(ep.no)
 	var side: float = SWITCH_SIDE.get(no, 1.0)
-	_wall_fixture(Furn.switch_plate(2 if no in [3, 5] else 1), "s", float(R.door.x) + side * 0.53, 1.2)
+	_wall_fixture(Furn.switch_plate(2 if no in [3, 5] else 1), "s", float(R.door.x) + side * 0.56, 1.2)
 	for o in OUTLETS.get(no, []):
 		_wall_fixture(Furn.outlet(), o[0], o[1], o[2])
 	_ceil_fixture(Furn.smoke_detector(), W * 0.2, D * 0.25)
@@ -260,17 +306,24 @@ func _build_fixtures() -> void:
 
 func _build_furniture() -> void:
 	for f in R.furniture:
-		var res := Build.furniture(f.t, f.get("p", {}))
-		var g: Node3D = res.g
-		add_child(g)
-		g.position = Vector3(f.x, f.get("y", 0.0), f.z)
-		g.rotation.y = deg_to_rad(f.get("ry", 0.0))
+		_add_furniture(f)
+
+
+func _add_furniture(f: Dictionary) -> void:
+	var res := Build.furniture(f.t, f.get("p", {}))
+	var g: Node3D = res.g
+	add_child(g)
+	g.position = Vector3(f.x, f.get("y", 0.0), f.z)
+	g.rotation.y = deg_to_rad(f.get("ry", 0.0))
+	if not preview:
 		_solidify(g)
+	if res.has("walker"):
+		walkers.append({"n": res.walker, "m": res.walker_m, "x": 0.0, "dir": 1.0, "wait": randf_range(0.5, 3.0), "sp": 1.2, "who": 0})
 
 
 func _build_door() -> void:
 	var light: bool = R.wall == "officetel"
-	var res := Build.finish(Furn.door(light, 0.84 if light else 1.0, not light))
+	var res := Build.finish(Furn.door(String(R.wall), 0.84 if light else 1.0, not light))
 	var g: Node3D = res.g
 	add_child(g)
 	g.position = Vector3(R.door.x, 0, D / 2 - 0.025)
@@ -297,40 +350,44 @@ func _local_aabb(root: Node3D) -> AABB:
 
 func _build_items() -> void:
 	for d in ep.items:
-		if d.get("extra", false):
-			continue
-		var res := Build.item(d.model, d.get("p", {}))
-		var root := Node3D.new()
-		add_child(root)
-		root.position = Vector3(d.pos[0], d.pos[1], d.pos[2])
-		root.rotation.y = deg_to_rad(d.get("ry", 0.0))
-		var g: Node3D = res.g
-		root.add_child(g)
-		if d.get("lie", false) and res.has("lie"):
-			g.rotation.z = PI / 2
-			g.position.y = res.lie
-		for u in res.get("uv", []):
-			u.visible = false
-		var it := {"def": d, "root": root, "state": "idle", "hidden": d.get("hidden", false), "base": root.transform}
-		var a := _local_aabb(root)
-		var body := StaticBody3D.new()
-		body.collision_layer = L_ITEM
-		body.collision_mask = 0
-		var cs := CollisionShape3D.new()
-		var bs := BoxShape3D.new()
-		bs.size = a.size.max(Vector3(0.04, 0.04, 0.04))
-		cs.shape = bs
-		cs.position = a.get_center()
-		body.add_child(cs)
-		root.add_child(body)
-		body.set_meta("ref", {"type": "item", "obj": it})
-		it.body = body
-		it.shape = cs
-		it.radius = a.size.length() / 2.0
-		if it.hidden:
-			root.visible = false
-			cs.disabled = true
-		items.append(it)
+		_add_item(d)
+
+
+func _add_item(d: Dictionary) -> void:
+	if d.get("extra", false):
+		return
+	var res := Build.item(d.model, d.get("p", {}))
+	var root := Node3D.new()
+	add_child(root)
+	root.position = Vector3(d.pos[0], d.pos[1], d.pos[2])
+	root.rotation.y = deg_to_rad(d.get("ry", 0.0))
+	var g: Node3D = res.g
+	root.add_child(g)
+	if d.get("lie", false) and res.has("lie"):
+		g.rotation.z = PI / 2
+		g.position.y = res.lie
+	for u in res.get("uv", []):
+		u.visible = false
+	var it := {"def": d, "root": root, "state": "idle", "hidden": d.get("hidden", false), "base": root.transform}
+	var a := _local_aabb(root)
+	var body := StaticBody3D.new()
+	body.collision_layer = L_ITEM
+	body.collision_mask = 0
+	var cs := CollisionShape3D.new()
+	var bs := BoxShape3D.new()
+	bs.size = a.size.max(Vector3(0.04, 0.04, 0.04))
+	cs.shape = bs
+	cs.position = a.get_center()
+	body.add_child(cs)
+	root.add_child(body)
+	body.set_meta("ref", {"type": "item", "obj": it})
+	it.body = body
+	it.shape = cs
+	it.radius = a.size.length() / 2.0
+	if it.hidden:
+		root.visible = false
+		cs.disabled = true
+	items.append(it)
 
 
 func _build_envs() -> void:
@@ -393,10 +450,12 @@ func _build_player() -> void:
 	cam.near = 0.03
 	cam.far = 40.0
 	head.add_child(cam)
-	cam.current = true
+	if not bg_wait:
+		cam.current = true
 	flash = SpotLight3D.new()
 	flash.light_color = Color(1.0, 0.94, 0.84)
-	flash.light_energy = 3.2
+	flash.light_energy = FLASH_E
+	flash.spot_attenuation = 0.7
 	flash.spot_range = 9.0
 	flash.spot_angle = 31.0
 	flash.spot_angle_attenuation = 1.3
@@ -421,6 +480,8 @@ func _build_player() -> void:
 	cam.add_child(hand_fill)
 	pitch = -0.12
 	yaw = 0.0
+	if preview:
+		_aim_shot()
 
 
 func _build_flies() -> void:
@@ -798,7 +859,7 @@ func select_tool(n: int, silent := false) -> void:
 
 func toggle_flash() -> void:
 	flash_on = not flash_on
-	flash.light_energy = 3.2 if flash_on else 0.0
+	flash.light_energy = FLASH_E if flash_on else 0.0
 	Sfx.play("flick", 0.6)
 	H_.flash.text = "" if flash_on else "손전등 꺼짐 (F)"
 
@@ -1264,6 +1325,7 @@ func _physics_process(dt: float) -> void:
 		breath_stage = 2
 		Sfx.breath(strength, false)
 	H_.vignette.modulate.a = 0.82 + 0.18 * (0.5 + 0.5 * sin(ph * TAU - PI / 2))
+	_tick_outside(dt)
 	_update_tools(dt)
 	_update_prompt()
 
@@ -1380,7 +1442,29 @@ func _update_lights() -> void:
 				var f := sin(t * 13.0) + sin(t * 31.7) + sin(t * 3.3)
 				L.light.light_energy = 0.0 if f > 2.1 else L.base * (0.2 if randf() < 0.02 else 1.0)
 	if flash_on:
-		flash.light_energy = 3.2 * (0.3 if randf() < 0.004 and not calm else 1.0)
+		flash.light_energy = FLASH_E * (0.3 if randf() < 0.004 and not calm else 1.0)
+
+
+## 2장 창밖: 이따금 사람들의 다리가 지나간다 (두 걸음 그림을 번갈아)
+func _tick_outside(dt: float) -> void:
+	for wk in walkers:
+		if wk.wait > 0.0:
+			wk.wait -= dt
+			wk.n.visible = false
+			if wk.wait <= 0.0:
+				wk.dir = 1.0 if randf() < 0.5 else -1.0
+				wk.x = -wk.dir * 3.0
+				wk.who = randi() % 3
+				wk.sp = randf_range(1.0, 1.5)
+			continue
+		wk.n.visible = true
+		wk.x += wk.dir * wk.sp * dt
+		wk.n.position.x = wk.x
+		wk.n.scale.x = wk.dir
+		var stride: int = int(absf(wk.x) / 0.34) % 2
+		wk.m.uv1_offset = Vector3((wk.who * 2 + stride) / 6.0, 0, 0)
+		if absf(wk.x) > 3.0 and signf(wk.x) == wk.dir:
+			wk.wait = randf_range(3.0, 9.0)
 
 
 func _update_tools(dt: float) -> void:
@@ -1407,10 +1491,105 @@ func _update_tools(dt: float) -> void:
 
 
 # ───────────────────────────── 타이틀 배경용
+## 문 쪽에 서서 방 왼쪽 끝에서 오른쪽 끝까지 훑는 범위를 정한다
+func _aim_shot() -> void:
+	var px := float(R.spawn[0]) * 0.55
+	var pz := float(R.spawn[1])
+	player.position = Vector3(px, 0, pz)
+	var far_z := -D / 2.0 + 0.3
+	var left := atan2(px - (-W / 2.0 + 0.25), pz - far_z)
+	var right := atan2(px - (W / 2.0 - 0.25), pz - far_z)
+	shot_l = maxf(left * 1.25, 0.5)
+	shot_r = minf(right * 1.25, -0.5)
+	shot_len = (shot_l - shot_r) / PAN_SPEED
+	t = 0.0
+	_preview_cam(0.0)
+
+
+## 지금 보이는 장면이 끝나기까지 남은 시간
+func shot_left() -> float:
+	return shot_len - t
+
+
+## 다음 배경 방을 화면을 멈추지 않고 조금씩 만든다. 끝나면 bg_done
+func build_background(e: Dictionary, state: Dictionary) -> void:
+	ep = e
+	S = state
+	R = e.room
+	preview = true
+	bg_wait = true
+	W = R.size[0]
+	D = R.size[1]
+	H = R.size[2]
+	eye = R.eye
+	Build.detail = 0 if Game.settings.get("quality", "high") == "low" or Game.touch else 1
+	visible = false
+	set_physics_process(false)
+	_bg_t = Time.get_ticks_msec()
+	_build_env()
+	if await _bg_pause():
+		return
+	_build_shell()
+	for f in R.furniture:
+		if await _bg_pause():
+			return
+		_add_furniture(f)
+	if await _bg_pause():
+		return
+	_build_door()
+	for sd in R.stains:
+		if await _bg_pause():
+			return
+		stains.append(Stain.new(sd, self))
+	for d in ep.items:
+		if await _bg_pause():
+			return
+		_add_item(d)
+	if await _bg_pause():
+		return
+	_build_envs()
+	_build_lights()
+	_build_player()
+	flash.light_energy = 0.0
+	bg_done = true
+	if bg_cancel:
+		queue_free()
+
+
+## 이번 프레임 몫을 다 썼으면 다음 프레임으로 넘긴다. 취소되면 방을 치우고 true
+func _bg_pause() -> bool:
+	if Time.get_ticks_msec() - _bg_t >= BG_SLICE_MS:
+		await get_tree().process_frame
+		_bg_t = Time.get_ticks_msec()
+	if bg_cancel:
+		queue_free()
+		return true
+	return false
+
+
+func cancel_background() -> void:
+	bg_cancel = true
+	if bg_done:
+		queue_free()
+
+
+## 다 만든 방을 화면에 내보낸다
+func show_background() -> void:
+	bg_wait = false
+	visible = true
+	add_child(world_env)
+	cam.make_current()
+	set_physics_process(true)
+	t = 0.0
+	_preview_cam(0.0)
+
+
 func _preview_cam(dt: float) -> void:
 	t += dt
-	player.rotation.y = 0.35 + sin(t * 0.07) * 0.32
-	head.rotation.x = -0.16 + sin(t * 0.05) * 0.04
+	# 왼쪽에서 오른쪽으로 일정하게 돈다. 다음 방이 늦으면 조금 더 돈다
+	player.rotation.y = lerpf(shot_l, shot_r, minf(t / shot_len, 1.25))
+	head.rotation.x = -0.13 + sin(t * 0.32) * 0.008
+	_tick_outside(dt)
 	_update_lights()
 	for st in stains:
 		st.tick(dt)

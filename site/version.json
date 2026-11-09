@@ -1,19 +1,19 @@
 {
-  "version": "1.4.1",
+  "version": "1.4.2",
   "date": "2026-11-09",
   "notes": [
-    "처음 화면 제목 글자가 겹쳐 보이던 것을 고쳤어요.",
-    "1.4.0: 방과 물건, 손과 도구를 실제처럼 새로 만들었어요.",
-    "1.4.0: 리모컨과 키보드, 도어락, 폴더폰은 버튼 하나하나까지 볼 수 있어요.",
-    "1.4.0: 시야를 사람 눈에 가깝게 고쳐서 방이 휘어 보이지 않아요."
+    "시작 화면 배경이 다섯 방을 차례로 보여 줘요.",
+    "창문과 창밖 풍경, 문을 실제처럼 새로 만들었어요.",
+    "가구끼리 겹쳐 보이던 곳을 고쳤어요.",
+    "1.4.0: 방과 물건, 손과 도구를 실제처럼 새로 만들었어요."
   ],
-  "windows": "https://github.com/EunYool10/LastRoom/releases/download/v1.4.1/LastRoom-Setup-1.4.1.exe",
-  "android": "https://github.com/EunYool10/LastRoom/releases/download/v1.4.1/LastRoom-1.4.1-android.apk",
-  "mac": "https://github.com/EunYool10/LastRoom/releases/download/v1.4.1/LastRoom-1.4.1-mac.zip",
+  "windows": "https://github.com/EunYool10/LastRoom/releases/download/v1.4.2/LastRoom-Setup-1.4.2.exe",
+  "android": "https://github.com/EunYool10/LastRoom/releases/download/v1.4.2/LastRoom-1.4.2-android.apk",
+  "mac": "https://github.com/EunYool10/LastRoom/releases/download/v1.4.2/LastRoom-1.4.2-mac.zip",
   "sha256": {
-    "windows": "4ae48643139e3ac86e3a8c00f2d4df6e0422f31d07dc689fd253e34674beb597",
-    "android": "f4d3e72c389998a7040ebcb2a1b47c05168c917a8e1ed11b6379073216d80499",
-    "mac": "90b445eefd653c2f3e3ed6b73713adbc9d8354c3997dd782ae26c6f0bee21c6b"
+    "windows": "995f2450d5d86d47798cb9598496b6f92a8eb8be46c6bf5f72ad612aa2c78e0e",
+    "android": "032917161b4b33910bbddeb4095bc28eb6bc0ef105e5caec340be478deca07b3",
+    "mac": "bf99ce82ef327e970e4fe25c996a6976f592c29a2fb695c0fb92b3c294934cc3"
   },
   "page": "https://eunyool10.github.io/LastRoom/",
   "terms": "2026-11-03"

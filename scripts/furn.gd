@@ -150,7 +150,7 @@ static func _desk(p: Dictionary) -> Dictionary:
 	_bar_handle(dr, Vector3(0, 0.002, d / 2.0 + 0.024), 0.1, hm)
 	if p.get("shelf", false):
 		var bracket := painted(0xd9d6d0, 0.45)
-		for y in [1.3, 1.62]:
+		for y in [1.03, 1.3]:
 			rbox(g, Vector3(w, 0.025, 0.24), 0.003, top, Vector3(0, y, -d / 2.0 + 0.12))
 			for sx in [-1.0, 1.0]:
 				var bx: float = float(sx) * (w / 2.0 - 0.05)
@@ -225,7 +225,7 @@ static func _wardrobe(p: Dictionary) -> Dictionary:
 	var w: float = p.get("w", 1.3)
 	var d: float = p.get("d", 0.58)
 	var h := 1.85
-	var lac := mat(0x1a110e, 0.22, 0.05)
+	var lac := mat(0x1a110e, 0.36, 0.05)
 	var inner := wood(0x3a2a20, 0.85)
 	rbox(g, Vector3(w + 0.03, 0.04, d + 0.02), 0.01, lac, Vector3(0, h - 0.02, 0))
 	rbox(g, Vector3(w + 0.012, 0.02, d + 0.01), 0.006, lac, Vector3(0, h - 0.05, 0))
@@ -475,7 +475,7 @@ static func _emat(p: Dictionary) -> Dictionary:
 	plane_up(g, w, d, tmat("emat", 1.0), Vector3(0, 0.0105, 0))
 	_piping(g, w - 0.01, d - 0.01, 0.0095, cloth_m(0x9e7d4f), 0.0035)
 	# 온도 조절기: 다이얼과 전원 스위치, 멀티탭 쪽으로 뽑혀 나온 줄
-	var ct := node(g, Vector3(w / 2.0 - 0.14, 0.012, d / 2.0 + 0.06))
+	var ct := node(g, Vector3(w / 2.0 - 0.3, 0.012, d / 2.0 + 0.06))
 	var body := plastic(0xe8e4d8, 0.5)
 	rbox(ct, Vector3(0.09, 0.03, 0.05), 0.008, body, Vector3(0, 0.015, 0))
 	lathe(ct, [Vector2(0.0, 0.03), Vector2(0.018, 0.03), Vector2(0.017, 0.042), Vector2(0.0, 0.043)], plastic(0x8c3a2a, 0.45), Vector3(-0.022, 0.0, 0.0), 18)
@@ -486,8 +486,8 @@ static func _emat(p: Dictionary) -> Dictionary:
 	sph(ct, 0.0028, mat(0x555555, 0.4), Vector3(0.024, 0.034, -0.014), 8)
 	text(ct, "강", 0.008, ink(0x4a2a22), Vector3(-0.022, 0.0306, 0.021), "up")
 	var cord := rubber(0x2a2a2a)
-	tube(g, [Vector3(w / 2.0 - 0.14, 0.008, d / 2.0 + 0.03), Vector3(w / 2.0 - 0.14, 0.012, d / 2.0 + 0.01), Vector3(w / 2.0 - 0.14, 0.012, d / 2.0 - 0.02)], 0.0045, cord, 6)
-	tube(g, [Vector3(w / 2.0 - 0.095, 0.008, d / 2.0 + 0.06), Vector3(w / 2.0 - 0.01, 0.005, d / 2.0 + 0.11), Vector3(0.12, 0.005, d / 2.0 + 0.17), Vector3(0.1, 0.005, d / 2.0 + 0.1), Vector3(0.14, 0.005, 1.0)], 0.0042, cord, 6)
+	tube(g, [Vector3(w / 2.0 - 0.3, 0.008, d / 2.0 + 0.03), Vector3(w / 2.0 - 0.3, 0.012, d / 2.0 + 0.01), Vector3(w / 2.0 - 0.3, 0.012, d / 2.0 - 0.02)], 0.0045, cord, 6)
+	tube(g, [Vector3(w / 2.0 - 0.255, 0.008, d / 2.0 + 0.06), Vector3(w / 2.0 - 0.2, 0.005, d / 2.0 + 0.12), Vector3(0.17, 0.005, d / 2.0 + 0.2), Vector3(0.2016, 0.012, 1.2005)], 0.0042, cord, 6)
 	return {"g": g}
 
 
@@ -671,58 +671,220 @@ static func _boiler() -> Dictionary:
 
 
 # ───────────────────────────── 창문
+## 벽에 뚫는 구멍 크기
+static func window_opening(p: Dictionary) -> Vector2:
+	return Vector2(float(p.get("w", 0.7)) + 0.09, float(p.get("h", 0.5)) + 0.09)
+
+
+## 바깥 풍경 재질: 빛과 안개를 받지 않는 그림
+static func _out(name: String, alpha := false) -> StandardMaterial3D:
+	var ex := {"unshaded": true, "disable_fog": true}
+	if alpha:
+		ex["alpha_tex"] = true
+	return tmat("outside/" + name, 1.0, ex)
+
+
+## 가로로 반복되는 바깥 풍경
+static func _out_wide(name: String, repeat: float) -> StandardMaterial3D:
+	var m: StandardMaterial3D = _out(name).duplicate()
+	m.uv1_scale = Vector3(repeat, 1, 1)
+	return m
+
+
+## 창문: 벽 속 안쪽 면 · 실내 몰딩과 창대 · PVC 창틀과 미닫이 두 짝 (고무 패킹 · 유리 · 잠금쇠 · 손잡이 홈) ·
+## 방충망, 그리고 유리 너머 실제 거리에 놓은 바깥 풍경. 원점은 유리 가운데, 벽면은 z -0.01
 static func _window(p: Dictionary) -> Dictionary:
-	if p.get("style", "") == "premium":
-		return _window_premium(p)
 	var g := node(null)
+	var res := {"g": g}
 	var w: float = p.get("w", 0.7)
 	var h: float = p.get("h", 0.5)
-	var view: String = p.get("tex", "win_e1")
-	var gm: StandardMaterial3D = tmat(view, 1.0, {"unshaded": true}).duplicate()
-	gm.albedo_color = col(int(p.get("tint", 0x9aa4b0)))
-	quad(g, w, h, gm, Vector3.ZERO)
-	if p.has("overlay"):
-		quad(g, w, h, tmat(p.overlay, 1.0, {"alpha_tex": true, "unshaded": true}), Vector3(0, 0, 0.03))
-	var fm := painted(int(p.get("frame", 0xd8d6d0)), 0.42)
-	var dk := mat(shade(int(p.get("frame", 0xd8d6d0)), 0.45), 0.8)
-	# 바깥 창틀
-	rbox(g, Vector3(w + 0.06, 0.04, 0.06), 0.004, fm, Vector3(0, h / 2.0 + 0.01, 0.005))
-	rbox(g, Vector3(w + 0.06, 0.04, 0.06), 0.004, fm, Vector3(0, -h / 2.0 - 0.01, 0.005))
-	rbox(g, Vector3(0.04, h, 0.06), 0.004, fm, Vector3(-w / 2.0 - 0.01, 0, 0.005))
-	rbox(g, Vector3(0.04, h, 0.06), 0.004, fm, Vector3(w / 2.0 + 0.01, 0, 0.005))
-	rbox(g, Vector3(w + 0.1, 0.015, 0.1), 0.003, fm, Vector3(0, -h / 2.0 - 0.036, 0.025))
-	# 미닫이 두 짝: 틀 · 가운데 겹침 · 잠금쇠 · 유리 반사
-	var sheen := _glass_sheen()
-	var pvc := painted(int(p.get("frame", 0xd8d6d0)), 0.36)
-	var sw := w / 2.0 + 0.006
+	var premium: bool = p.get("style", "") == "premium"
+	var hex := int(p.get("frame", 0xd8d6d0))
+	var o := window_opening(p)
+	var wz := -0.01
+	var dep := 0.18
+	# 벽 속 안쪽 면
+	var plaster := painted(0xf0ede6 if premium else 0xcfc9bd, 0.85)
+	for sy in [-1.0, 1.0]:
+		box(g, Vector3(o.x + 0.04, 0.02, dep), plaster, Vector3(0, float(sy) * (o.y / 2.0 + 0.01), wz - dep / 2.0))
+	for sx in [-1.0, 1.0]:
+		box(g, Vector3(0.02, o.y, dep), plaster, Vector3(float(sx) * (o.x / 2.0 + 0.01), 0, wz - dep / 2.0))
+	# 실내 몰딩 · 창대 · 창대 밑판
+	var trim := painted(0xf4f2ee if premium else hex, 0.46)
+	var trim_w := 0.055
+	var t := 0.013
+	rbox(g, Vector3(o.x + 2.0 * trim_w, trim_w, t), 0.003, trim, Vector3(0, o.y / 2.0 + trim_w / 2.0, wz + t / 2.0))
+	for sx in [-1.0, 1.0]:
+		rbox(g, Vector3(trim_w, o.y, t), 0.003, trim, Vector3(float(sx) * (o.x / 2.0 + trim_w / 2.0), 0, wz + t / 2.0))
+	var sill_d := dep * 0.55 + 0.075
+	rbox(g, Vector3(o.x + 2.0 * trim_w + 0.05, 0.026, sill_d), 0.004, painted(0xebe8e3, 0.16) if premium else trim, Vector3(0, -o.y / 2.0 - 0.013, wz + 0.075 - sill_d / 2.0))
+	if not premium:
+		rbox(g, Vector3(o.x + 2.0 * trim_w, 0.045, 0.012), 0.003, trim, Vector3(0, -o.y / 2.0 - 0.0485, wz + 0.006))
+	# 창틀
+	var pvc := painted(hex, 0.34)
+	var dk := mat(0x1b1b1d, 0.8)
+	var fz := wz - 0.115
+	var fw := 0.035
+	for sy in [-1.0, 1.0]:
+		rbox(g, Vector3(o.x, fw, 0.075), 0.003, pvc, Vector3(0, float(sy) * (o.y / 2.0 - fw / 2.0), fz))
+	for sx in [-1.0, 1.0]:
+		rbox(g, Vector3(fw, o.y - 2.0 * fw, 0.075), 0.003, pvc, Vector3(float(sx) * (o.x / 2.0 - fw / 2.0), 0, fz))
+	var iw := o.x - 2.0 * fw
+	var ih := o.y - 2.0 * fw
 	for k in 2:
-		var cx := -sw / 2.0 + 0.003 if k == 0 else sw / 2.0 - 0.003
-		var z := 0.012 if k == 0 else 0.03
+		box(g, Vector3(iw, 0.004, 0.012), dk, Vector3(0, -ih / 2.0 + 0.002, fz + (0.017 if k == 0 else -0.017)))
+	# 미닫이 두 짝 (안쪽 왼짝, 바깥 오른짝, 가운데서 겹친다)
+	var sw := iw / 2.0 + 0.02
+	var st := 0.04
+	var sheen := _glass_sheen()
+	var pane := mat(0xc8d4dc, 0.06, 0.0, {"alpha": 0.08, "metallic_specular": 0.8})
+	var grip := plastic(shade(hex, 0.12), 0.4)
+	var gw := sw - 2.0 * st
+	var gh := ih - 2.0 * st
+	for k in 2:
+		var cx := -iw / 2.0 + sw / 2.0 if k == 0 else iw / 2.0 - sw / 2.0
+		var z := fz + 0.017 if k == 0 else fz - 0.017
 		for sy in [-1.0, 1.0]:
-			box(g, Vector3(sw, 0.02, 0.016), pvc, Vector3(cx, float(sy) * (h / 2.0 - 0.01), z))
+			rbox(g, Vector3(sw, st, 0.026), 0.003, pvc, Vector3(cx, float(sy) * (ih / 2.0 - st / 2.0), z))
+			box(g, Vector3(gw + 0.006, 0.005, 0.004), dk, Vector3(cx, float(sy) * (gh / 2.0 + 0.0015), z + 0.0125))
 		for sx in [-1.0, 1.0]:
-			box(g, Vector3(0.02, h - 0.04, 0.016), pvc, Vector3(cx + float(sx) * (sw / 2.0 - 0.01), 0, z))
-		quad(g, sw - 0.04, h - 0.04, sheen, Vector3(cx, 0, z))
-		for sy in [-1.0, 1.0]:
-			box(g, Vector3(sw - 0.04, 0.003, 0.002), dk, Vector3(cx, float(sy) * (h / 2.0 - 0.021), z + 0.003))
+			rbox(g, Vector3(st, ih - 2.0 * st, 0.026), 0.003, pvc, Vector3(cx + float(sx) * (sw / 2.0 - st / 2.0), 0, z))
+			box(g, Vector3(0.005, gh, 0.004), dk, Vector3(cx + float(sx) * (gw / 2.0 + 0.0015), 0, z + 0.0125))
+		quad(g, gw, gh, pane, Vector3(cx, 0, z))
+		quad(g, gw, gh, sheen, Vector3(cx, 0, z + 0.0012))
+		var gx := cx + (-1.0 if k == 0 else 1.0) * (sw / 2.0 - st / 2.0)
+		rbox(g, Vector3(0.015, minf(0.15, gh * 0.5), 0.006), 0.002, grip, Vector3(gx, -ih * 0.06, z + 0.015))
+	# 가운데 잠금쇠
 	var lk := steel(0xb8bcc0, 0.3)
-	box(g, Vector3(0.018, 0.04, 0.006), lk, Vector3(0.0, 0, 0.043))
-	var lv := box(g, Vector3(0.028, 0.007, 0.005), lk, Vector3(-0.008, 0.008, 0.048))
+	rbox(g, Vector3(0.022, 0.056, 0.007), 0.002, lk, Vector3(0.0, 0, fz + 0.034))
+	var lv := rbox(g, Vector3(0.036, 0.008, 0.006), 0.002, lk, Vector3(-0.009, 0.012, fz + 0.041))
 	lv.rotation.z = 0.5
+	# 바깥쪽 방충망 (오른쪽 반)
+	var ms := mat(0x1a1c20, 0.9, 0.0, {"alpha": 0.2})
+	var mx := iw / 4.0
+	quad(g, iw / 2.0 - 0.01, ih - 0.01, ms, Vector3(mx, 0, fz - 0.05))
+	for sy in [-1.0, 1.0]:
+		box(g, Vector3(iw / 2.0, 0.012, 0.008), pvc, Vector3(mx, float(sy) * (ih / 2.0 - 0.006), fz - 0.05))
+	for sx in [-1.0, 1.0]:
+		box(g, Vector3(0.012, ih, 0.008), pvc, Vector3(mx + float(sx) * (iw / 4.0 - 0.006), 0, fz - 0.05))
+	# 낡은 창의 유리 때
+	if not premium:
+		quad(g, iw, ih, mat(0x6b5a44, 1.0, 0.0, {"alpha": 0.1, "unshaded": true, "disable_fog": true}), Vector3(0, 0, fz - 0.046))
+	# 유리 너머
+	var black := mat(0x07080b, 1.0, 0.0, {"unshaded": true, "disable_fog": true})
+	match String(p.get("tex", "win_e1")):
+		"win_e1":
+			quad(g, 9.0, 6.0, black, Vector3(0, 0, -1.26))
+			quad(g, 2.4, 1.8, _out("e1"), Vector3(0.42, -0.22, -1.24))
+		"win_e2":
+			var gy := -h / 2.0 + 0.012
+			plane_up(g, 18.0, 2.7, _out_wide("e2_ground", 3.0), Vector3(0, gy, -1.45))
+			quad(g, 19.2, 2.2, _out_wide("e2_back", 3.0), Vector3(0, gy + 1.08, -2.8))
+			var wk := pivot(g, "walker", Vector3(0, gy + 0.59, -0.95))
+			var legs: StandardMaterial3D = _out("e2_legs", true).duplicate()
+			legs.cull_mode = BaseMaterial3D.CULL_DISABLED
+			legs.uv1_scale = Vector3(1.0 / 6.0, 1, 1)
+			quad(wk, 0.6, 1.2, legs, Vector3.ZERO)
+			wk.visible = false
+			res["walker"] = wk
+			res["walker_m"] = legs
+		"win_e3":
+			quad(g, 92.0, 15.33, _out_wide("e3_far", 3.0), Vector3(1.0, 0.81, -20.0))
+		"win_e4":
+			quad(g, 21.0, 5.6, _out_wide("e4", 3.0), Vector3(0, 0.3, -2.4))
+			_bubble_wrap(g, iw, ih, fz + 0.05)
+		"win_e5":
+			quad(g, 3.0, 3.0, black, Vector3(0, 0, -0.4))
+			_foil_cover(g, iw, ih, fz + 0.05)
 	if p.get("bars", false):
-		var bar := pbr("rust", 0x3a3a3a, 0.55, 0.5)
-		for i in range(1, 6):
-			cyl(g, 0.006, 0.006, h + 0.06, bar, Vector3(-w / 2.0 + i * w / 6.0, 0, 0.055), 8)
-		for sy in [-1.0, 1.0]:
-			box(g, Vector3(w + 0.03, 0.01, 0.01), bar, Vector3(0, float(sy) * (h / 2.0 + 0.012), 0.055))
+		var bar := pbr("rust", 0x3a3a3a, 0.55, 0.45)
+		var bz := fz - 0.06
+		var n := 6
+		for i in range(1, n):
+			cyl(g, 0.0065, 0.0065, o.y - 0.02, bar, Vector3(-o.x / 2.0 + i * o.x / n, 0, bz), 8)
+		for sy in [-0.42, 0.42]:
+			rbox(g, Vector3(o.x - 0.02, 0.012, 0.012), 0.002, bar, Vector3(0, float(sy) * o.y, bz))
 	if p.has("curtain"):
-		var cm := cloth_m(int(p["curtain"]))
-		var top := h / 2.0 + 0.1
-		var bot := -h / 2.0 - 0.15
-		rod(g, Vector3(-w / 2.0 - 0.1, top + 0.02, 0.08), Vector3(w / 2.0 + 0.1, top + 0.02, 0.08), 0.007, steel(), 8)
-		for sx in [-1.0, 1.0]:
-			_drape(g, cm, w * 0.35, top - bot, 0.018, 0.05, Vector3(float(sx) * w * 0.38, (top + bot) / 2.0, 0.08), false)
-	return {"g": g}
+		var gold := mat(0xd8c08c, 0.3, 0.7)
+		var ry: float = p.get("rod_y", h / 2.0 + 0.2)
+		var rx: Array = p.get("rod_x", [-(w / 2.0 + 0.3), w / 2.0 + 0.3])
+		var rx0: float = rx[0]
+		var rx1: float = rx[1]
+		var zr := 0.22
+		var zs := 0.15
+		rod(g, Vector3(rx0, ry, zr), Vector3(rx1, ry, zr), 0.011, gold, 12)
+		rod(g, Vector3(rx0 + 0.06, ry - 0.012, zs), Vector3(rx1 - 0.04, ry - 0.012, zs), 0.006, gold, 8)
+		sph(g, 0.021, gold, Vector3(rx0 - 0.012, ry, zr), 12)
+		sph(g, 0.021, gold, Vector3(rx1 + 0.012, ry, zr), 12)
+		for bx in [rx0 + 0.1, rx1 - 0.1]:
+			var wp := cyl(g, 0.022, 0.022, 0.008, gold, Vector3(bx, ry, -0.006), 14)
+			wp.rotation.x = PI / 2.0
+			rod(g, Vector3(bx, ry, -0.01), Vector3(bx, ry, zr + 0.012), 0.008, gold, 8)
+		# 겉커튼: 봉 고리에 걸려 창대 아래까지
+		var cm := pbr("fabric", int(p["curtain"]), 1.0, 0.0, {"rim_enabled": true, "rim": 0.25, "rim_tint": 0.5})
+		var top := ry - 0.035
+		var bot := -h / 2.0 - 0.08
+		for span in [[rx0 + 0.04, -w / 2.0 + 0.12], [w / 2.0 - 0.2, rx1 - 0.03]]:
+			var a: float = span[0]
+			var cw: float = span[1] - a
+			_drape(g, cm, cw, top - bot, 0.03, 0.075, Vector3(a + cw / 2.0, (top + bot) / 2.0, zr), false)
+			var nr := maxi(2, int(round(cw / 0.05)))
+			for i in nr + 1:
+				var rr := ring(g, 0.019, 0.0035, gold, Vector3(a + cw * i / nr, ry, zr))
+				rr.rotation.y = PI / 2.0
+		# 속커튼: 반쯤 비치는 흰 천, 창대 바로 위까지
+		var sm := mat(0xffffff, 1.0, 0.0, {"alpha": 0.42, "cull_off": true})
+		var stop := ry - 0.03
+		var sbot := -h / 2.0 + 0.006
+		for span in [[rx0 + 0.08, -0.4], [0.4, rx1 - 0.06]]:
+			var a: float = span[0]
+			var cw: float = span[1] - a
+			_drape(g, sm, cw, stop - sbot, 0.012, 0.055, Vector3(a + cw / 2.0, (stop + sbot) / 2.0, zs), true)
+	return res
+
+
+## 4장: 창 안쪽에 붙인 뽁뽁이 한 장과 겹겹이 두른 테이프
+static func _bubble_wrap(g: Node3D, iw: float, ih: float, z: float) -> void:
+	var q := QuadMesh.new()
+	q.size = Vector2(iw + 0.03, ih + 0.03)
+	q.subdivide_width = 16
+	q.subdivide_depth = 12
+	var mesh := deformed(q, func(v: Vector3) -> Vector3: return Vector3(v.x, v.y, sin(v.x * 9.0 + v.y * 7.0) * 0.004 + (hash3(Vector3(snappedf(v.x, 0.06), snappedf(v.y, 0.06), 1.0)) - 0.5) * 0.006))
+	mi(g, mesh, pbr("bubble", 0xe6ecf0, 0.14, 0.0, {"alpha": 0.24, "metallic_specular": 0.8}, 0.7), Vector3(0, 0, z)).set_meta("ghost", true)
+	_tape_frame(g, iw + 0.02, ih + 0.02, z + 0.008, pbr("paper", 0xd9c89a, 0.6), 0.036, 3)
+	# 가운데 겹침을 따라 한 줄 더
+	var tape := pbr("paper", 0xcdbd90, 0.6)
+	_tape_strip(g, Vector3(0.006, -ih / 2.0, z + 0.008), Vector3(-0.004, ih / 2.0, z + 0.008), 0.038, tape)
+
+
+## 5장: 창 전체를 덮은 은박지와 가장자리 은박 테이프
+static func _foil_cover(g: Node3D, iw: float, ih: float, z: float) -> void:
+	var q := QuadMesh.new()
+	q.size = Vector2(iw + 0.03, ih + 0.03)
+	q.subdivide_width = 34
+	q.subdivide_depth = 34
+	var mesh := deformed(q, func(v: Vector3) -> Vector3:
+		var s := Vector3(snappedf(v.x, 0.03), snappedf(v.y, 0.03), 2.0)
+		return Vector3(v.x, v.y, (hash3(s) - 0.5) * 0.014 + sin(v.x * 7.0 + v.y * 5.0) * 0.004), true)
+	mi(g, mesh, pbr("foil", 0xc0c4ca, 0.3, 0.72), Vector3(0, 0, z)).set_meta("ghost", true)
+	_tape_frame(g, iw + 0.02, ih + 0.02, z + 0.012, pbr("paper", 0xa8acb2, 0.4), 0.04, 2)
+
+
+static func _tape_frame(g: Node3D, w: float, h: float, z: float, m: Material, wd: float, layers: int) -> void:
+	for layer in layers:
+		var j := layer * 0.011
+		var zz := z + layer * 0.0012
+		var k := hash3(Vector3(layer, 3.0, 1.0)) * 0.012
+		_tape_strip(g, Vector3(-w / 2.0, h / 2.0 - j, zz), Vector3(w / 2.0, h / 2.0 - j - k, zz), wd, m)
+		_tape_strip(g, Vector3(-w / 2.0, -h / 2.0 + j + k, zz), Vector3(w / 2.0, -h / 2.0 + j, zz), wd, m)
+		_tape_strip(g, Vector3(-w / 2.0 + j, -h / 2.0, zz), Vector3(-w / 2.0 + j + k, h / 2.0, zz), wd, m)
+		_tape_strip(g, Vector3(w / 2.0 - j - k, -h / 2.0, zz), Vector3(w / 2.0 - j, h / 2.0, zz), wd, m)
+
+
+static func _tape_strip(g: Node3D, a: Vector3, b: Vector3, wd: float, m: Material) -> void:
+	var n := rbox(g, Vector3(a.distance_to(b), wd, 0.0012), 0.0004, m, (a + b) / 2.0)
+	n.rotation.z = atan2(b.y - a.y, b.x - a.x)
+	n.set_meta("ghost", true)
 
 
 static func _fluoro() -> Dictionary:
@@ -928,7 +1090,6 @@ static func _plug() -> Dictionary:
 	tube(g, [Vector3(0.155, 0.012, 0.0), Vector3(0.21, 0.008, 0.02), Vector3(0.3, 0.006, -0.03), Vector3(0.38, 0.006, -0.05)], 0.0042, cord, 6)
 	# 뽑힌 전기장판 플러그
 	_mains_plug(g, Vector3(-0.05, 0.016, 0.12), -PI / 2.0, plastic(0xe8e4d8, 0.5))
-	tube(g, [Vector3(-0.05, 0.012, 0.142), Vector3(-0.055, 0.008, 0.24), Vector3(-0.03, 0.006, 0.36), Vector3(-0.05, 0.005, 0.55)], 0.0042, cord, 6)
 	return {"g": g}
 
 
@@ -1005,21 +1166,34 @@ static func _boiler_room() -> Dictionary:
 	var clamp_m := steel(0x8d8d88, 0.3)
 	lathe(g, [Vector2(0.05, 1.74), Vector2(0.053, 1.74), Vector2(0.053, 1.764), Vector2(0.05, 1.764)], clamp_m, Vector3(0, 0, bz), 18)
 	box(g, Vector3(0.22, 0.3, 0.004), mat(0x161412, 1.0, 0.0, {"alpha": 0.8}), Vector3(0.01, 1.82, -d / 2.0 + 0.023))
-	# 루버 문
-	var door := node(g, Vector3(w / 2.0 - 0.015, 0, d / 2.0))
-	door.rotation.y = deg_to_rad(70)
-	var dw := w - 0.03
-	rbox(door, Vector3(dw, 0.1, 0.03), 0.003, wm, Vector3(-dw / 2.0, 0.08, 0))
-	rbox(door, Vector3(dw, 0.1, 0.03), 0.003, wm, Vector3(-dw / 2.0, h - 0.08, 0))
-	for sx in [0.03, dw - 0.03]:
-		rbox(door, Vector3(0.06, h - 0.05, 0.03), 0.003, wm, Vector3(-float(sx), h / 2.0, 0))
+	# 접이식 루버 문: 두 짝이 반쯤 접혀 있다. 오른쪽 문설주에 달렸고 접힌 안쪽이 방으로 나온다
+	var leaf := (w - 0.03) / 2.0
+	var hinge_p := Vector3(w / 2.0 - 0.015, 0, d / 2.0)
+	var fold := deg_to_rad(78.0)
+	_louver_leaf(g, hinge_p, fold, leaf, h, wm, false)
+	var fold_p := hinge_p + Vector3(-cos(fold) * leaf, 0, sin(fold) * leaf)
+	_louver_leaf(g, fold_p, -fold, leaf, h, wm, true)
+	for y in [0.3, h / 2.0, h - 0.3]:
+		cyl(g, 0.006, 0.006, 0.06, steel(0xb0b0ac, 0.32), fold_p + Vector3(0, float(y), 0), 8)
+	return {"g": g, "foot": Vector2(w, d)}
+
+
+## 접이식 문 한 짝: 위아래 틀 · 양옆 틀 · 비스듬한 살. 경첩 쪽이 원점, 문은 -X로 뻗는다
+static func _louver_leaf(g: Node3D, p: Vector3, ang: float, dw: float, h: float, wm: Material, knob: bool) -> void:
+	var door := node(g, p)
+	door.rotation.y = ang
+	rbox(door, Vector3(dw, 0.1, 0.028), 0.003, wm, Vector3(-dw / 2.0, 0.08, 0))
+	rbox(door, Vector3(dw, 0.1, 0.028), 0.003, wm, Vector3(-dw / 2.0, h - 0.08, 0))
+	for sx in [0.024, dw - 0.024]:
+		rbox(door, Vector3(0.048, h - 0.05, 0.028), 0.003, wm, Vector3(-float(sx), h / 2.0, 0))
 	var slat := painted(0xdbd5c9, 0.55)
 	for i in 28:
-		var s := rbox(door, Vector3(dw - 0.1, 0.05, 0.008), 0.0015, slat, Vector3(-dw / 2.0, 0.17 + i * 0.066, 0.002))
+		var s := rbox(door, Vector3(dw - 0.09, 0.05, 0.007), 0.0015, slat, Vector3(-dw / 2.0, 0.17 + i * 0.066, 0.0))
 		s.rotation.x = 0.7
-	var knob_c := Vector3(-dw + 0.05, 1.0, 0.018)
-	lathe(door, [Vector2(0.0, 0.0), Vector2(0.024, 0.0), Vector2(0.024, 0.003), Vector2(0.012, 0.008), Vector2(0.011, 0.02), Vector2(0.024, 0.03), Vector2(0.025, 0.04), Vector2(0.018, 0.05), Vector2(0.0, 0.052)], chrome(), Vector3.ZERO, 18).transform = Transform3D(Basis(Vector3.RIGHT, PI / 2.0), knob_c)
-	return {"g": g, "foot": Vector2(w, d)}
+		s.set_meta("ghost", true)
+	if knob:
+		var kc := Vector3(-dw + 0.024, 1.0, 0.016)
+		lathe(door, [Vector2(0.0, 0.0), Vector2(0.02, 0.0), Vector2(0.02, 0.003), Vector2(0.01, 0.008), Vector2(0.009, 0.02), Vector2(0.021, 0.03), Vector2(0.022, 0.04), Vector2(0.015, 0.05), Vector2(0.0, 0.052)], chrome(), Vector3.ZERO, 16).transform = Transform3D(Basis(Vector3.RIGHT, PI / 2.0), kc)
 
 
 ## 하드 캐리어: 세로 홈 껍데기 · 지퍼 · 바퀴 넷 · 손잡이 · 안감 끈 · 개어 넣은 옷
@@ -1481,65 +1655,160 @@ static func _trays() -> Dictionary:
 
 
 # ───────────────────────────── 문 · 스위치 (room.gd가 쓴다)
-## 현관문: 패널 눌림 · 틀 · 경첩 셋 · 레버 손잡이 · 잠금 뭉치 · 도어아이 · 도어클로저 · 문턱.
-## 원점은 문 아래 가운데, 앞(+Z)이 방 안쪽. 손잡이는 -x 쪽. deadbolt면 돌림쇠도 단다 (도어락 있는 문은 없음)
-static func door(light: bool, handle_y := 1.0, deadbolt := true) -> Dictionary:
+## 문이 벽에 뚫는 구멍 크기
+static func door_opening() -> Vector2:
+	return Vector2(0.9, 2.05)
+
+
+## 방마다 다른 문. 벽 구멍 안쪽 문틀 · 벽면 몰딩 · 틀 안에 들어앉은 문짝 · 문턱 · 손잡이와 잠금 장치.
+## 원점은 문 아래 가운데, 앞(+Z)이 방 안쪽, 벽면은 z -0.025. 손잡이는 -x 쪽
+static func door(style: String, handle_y := 1.0, deadbolt := true) -> Dictionary:
 	var g := node(null)
-	var dm := painted(0xe9e4de, 0.42) if light else painted(0x6e5a48, 0.48)
-	var fm := painted(0xffffff, 0.45) if light else wood(0x4e3e30, 0.6)
-	rbox(g, Vector3(0.8, 2.0, 0.04), 0.004, dm, Vector3(0, 1.0, 0))
-	# 눌러 찍은 면 둘
-	var line := mat(shade(0xe9e4de if light else 0x6e5a48, 0.3), 0.7)
-	for c in [[0.56, 0.62, 1.38], [0.56, 0.62, 0.44]]:
-		var pw: float = c[0]
-		var ph: float = c[1]
-		var cy: float = c[2]
-		rbox(g, Vector3(pw, ph, 0.002), 0.0008, dm, Vector3(0, cy, 0.0208))
-		for sx in [-1.0, 1.0]:
-			box(g, Vector3(0.002, ph, 0.002), line, Vector3(float(sx) * pw / 2.0, cy, 0.022))
-		for sy in [-1.0, 1.0]:
-			box(g, Vector3(pw, 0.002, 0.002), line, Vector3(0, cy + float(sy) * ph / 2.0, 0.022))
-	# 틀과 문턱
+	var wz := -0.025
+	var zf := -0.05
+	var o := door_opening()
+	var dm: Material
+	var fm: Material
+	var viewer := true
+	var closer := false
+	var chain := false
+	var hinge_show := false
+	match style:
+		"goshiwon":
+			dm = wood(0x8a6b4a, 0.48)
+			fm = wood(0x5e4632, 0.55)
+			viewer = false
+			chain = true
+			hinge_show = true
+		"banjiha":
+			dm = painted(0x6a5c4c, 0.5)
+			fm = painted(0x4a3e34, 0.55)
+			chain = true
+		"officetel":
+			dm = painted(0xe9e4de, 0.34)
+			fm = painted(0xf6f4f0, 0.4)
+			closer = true
+		"oneroom":
+			dm = painted(0x79848a, 0.42)
+			fm = painted(0x5e666b, 0.45)
+			closer = true
+		_:
+			dm = wood(0xa98458, 0.42)
+			fm = wood(0xc3a67e, 0.5)
+			viewer = false
+			hinge_show = true
+	# 문틀: 벽 속 안쪽 면, 벽면 몰딩과 안쪽 턱
 	for sx in [-1.0, 1.0]:
-		rbox(g, Vector3(0.06, 2.06, 0.08), 0.004, fm, Vector3(float(sx) * 0.43, 1.03, 0.004))
-	rbox(g, Vector3(0.92, 0.06, 0.08), 0.004, fm, Vector3(0, 2.06, 0.004))
-	rbox(g, Vector3(0.82, 0.012, 0.09), 0.003, steel(0x9a9a94, 0.42), Vector3(0, 0.006, 0.01))
-	# 경첩
+		var x := float(sx)
+		box(g, Vector3(0.05, o.y, 0.14), fm, Vector3(x * (o.x / 2.0 - 0.025), o.y / 2.0, wz - 0.07))
+		rbox(g, Vector3(0.065, o.y + 0.065, 0.016), 0.004, fm, Vector3(x * (o.x / 2.0 + 0.0325), (o.y + 0.065) / 2.0, wz + 0.008))
+		rbox(g, Vector3(0.012, o.y + 0.012, 0.006), 0.002, fm, Vector3(x * (o.x / 2.0 + 0.006), (o.y + 0.012) / 2.0, wz + 0.018))
+	box(g, Vector3(o.x, 0.05, 0.14), fm, Vector3(0, o.y - 0.025, wz - 0.07))
+	rbox(g, Vector3(o.x + 0.13, 0.065, 0.016), 0.004, fm, Vector3(0, o.y + 0.0325, wz + 0.008))
+	rbox(g, Vector3(o.x + 0.024, 0.012, 0.006), 0.002, fm, Vector3(0, o.y + 0.006, wz + 0.018))
+	# 문짝 · 문턱 · 바닥 틈 고무
+	var lw := o.x - 0.104
+	var lh := o.y - 0.056
+	rbox(g, Vector3(lw, lh, 0.04), 0.003, dm, Vector3(0, 0.006 + lh / 2.0, zf - 0.02))
+	rbox(g, Vector3(o.x - 0.1, 0.012, 0.11), 0.003, steel(0x8f8f88, 0.42), Vector3(0, 0.006, wz - 0.05))
+	box(g, Vector3(lw - 0.02, 0.012, 0.01), rubber(0x1a1a1c), Vector3(0, 0.012, zf + 0.002))
 	var hm := steel(0xb8bcc0, 0.3)
-	for y in [0.25, 1.05, 1.82]:
-		_hinge(g, Vector3(0.395, float(y), 0.0205), hm, 0.1)
+	var ch := chrome(0xc0c4c8, 0.2)
+	if hinge_show:
+		for y in [0.25, 1.05, 1.82]:
+			_hinge(g, Vector3(lw / 2.0 - 0.005, float(y), zf + 0.0005), hm, 0.1)
+	match style:
+		"goshiwon":
+			# 옷걸이 고리 둘, 손때 탄 자리
+			for sx in [-1.0, 1.0]:
+				var hx := float(sx) * 0.08
+				cylz(g, 0.016, 0.003, ch, Vector3(hx, 1.62, zf + 0.0015), 14)
+				tube(g, [Vector3(hx, 1.62, zf + 0.003), Vector3(hx, 1.625, zf + 0.03), Vector3(hx, 1.6, zf + 0.05), Vector3(hx, 1.585, zf + 0.04)], 0.0035, ch, 8)
+			box(g, Vector3(0.12, 0.18, 0.0008), mat(0x4a3826, 0.9, 0.0, {"alpha": 0.25}), Vector3(-0.3, 1.06, zf + 0.0006)).set_meta("ghost", true)
+		"banjiha":
+			# 눌러 찍은 면 둘 · 우편함 틈과 뚜껑
+			var line := mat(0x3a3128, 0.8)
+			for c in [[0.56, 0.62, 1.42], [0.56, 0.5, 0.42]]:
+				var pw: float = c[0]
+				var ph: float = c[1]
+				var cy: float = c[2]
+				rbox(g, Vector3(pw, ph, 0.002), 0.0008, dm, Vector3(0, cy, zf + 0.001))
+				for sx in [-1.0, 1.0]:
+					box(g, Vector3(0.0025, ph, 0.002), line, Vector3(float(sx) * pw / 2.0, cy, zf + 0.002))
+				for sy in [-1.0, 1.0]:
+					box(g, Vector3(pw, 0.0025, 0.002), line, Vector3(0, cy + float(sy) * ph / 2.0, zf + 0.002))
+			# 아래쪽과 모서리의 녹 자국
+			var rs := pbr("rust", 0x5b3a26, 0.85, 0.15)
+			for v in [[-0.31, 0.09, 0.14, 0.12], [0.3, 0.07, 0.17, 0.1], [0.02, 0.05, 0.3, 0.05], [-0.36, 0.3, 0.05, 0.2], [0.36, 1.86, 0.05, 0.16]]:
+				var sp := plate(g, float(v[2]), float(v[3]), 0.0008, 0.018, rs, Vector3(float(v[0]), float(v[1]), zf + 0.0006))
+				sp.rotation.x = PI / 2.0
+				sp.set_meta("ghost", true)
+			var bm := brass(0xa8843e, 0.42)
+			rbox(g, Vector3(0.28, 0.07, 0.004), 0.003, bm, Vector3(0, 0.86, zf + 0.002))
+			box(g, Vector3(0.23, 0.036, 0.002), mat(0x0a0908, 0.9), Vector3(0, 0.86, zf + 0.0042))
+			var flap := rbox(g, Vector3(0.24, 0.044, 0.003), 0.0012, bm, Vector3(0, 0.864, zf + 0.0075))
+			flap.rotation.x = -0.12
+			cyl(g, 0.0028, 0.0028, 0.24, bm, Vector3(0, 0.886, zf + 0.0055), 8).rotation.z = PI / 2.0
+		"bedroom":
+			# 네 칸 패널 문: 들어간 틀 안에 도톰한 판
+			var line := mat(0x5a4326, 0.8)
+			for c in [[-0.17, 1.42, 0.26, 0.82], [0.17, 1.42, 0.26, 0.82], [-0.17, 0.5, 0.26, 0.74], [0.17, 0.5, 0.26, 0.74]]:
+				var cx: float = c[0]
+				var cy: float = c[1]
+				var pw: float = c[2]
+				var ph: float = c[3]
+				rbox(g, Vector3(pw, ph, 0.006), 0.0025, dm, Vector3(cx, cy, zf + 0.002))
+				for sx in [-1.0, 1.0]:
+					box(g, Vector3(0.003, ph + 0.012, 0.002), line, Vector3(cx + float(sx) * (pw / 2.0 + 0.004), cy, zf + 0.0012))
+				for sy in [-1.0, 1.0]:
+					box(g, Vector3(pw + 0.012, 0.003, 0.002), line, Vector3(cx, cy + float(sy) * (ph / 2.0 + 0.004), zf + 0.0012))
+			# 안에서 거는 작은 빗장
+			rbox(g, Vector3(0.09, 0.03, 0.006), 0.002, hm, Vector3(-0.3, 1.32, zf + 0.003))
+			rod(g, Vector3(-0.34, 1.32, zf + 0.011), Vector3(-0.42, 1.32, zf + 0.011), 0.0045, hm, 8)
+			sph(g, 0.006, ch, Vector3(-0.3, 1.32, zf + 0.018), 8)
 	# 손잡이 뭉치 (-x쪽)
-	if true:
-		var hx := -0.3
-		var ch := chrome(0xc0c4c8, 0.2)
-		var rose := lathe(g, [Vector2(0.0, 0.0), Vector2(0.032, 0.0), Vector2(0.032, 0.003), Vector2(0.024, 0.009), Vector2(0.0, 0.009)], ch, Vector3(hx, handle_y, 0.0205), 24)
-		rose.rotation.x = PI / 2.0
-		tube(g, [Vector3(hx, handle_y, 0.024), Vector3(hx, handle_y, 0.06), Vector3(hx + 0.015, handle_y, 0.07), Vector3(hx + 0.1, handle_y, 0.072), Vector3(hx + 0.12, handle_y - 0.004, 0.066)], 0.0095, ch, 10, true, 6)
-		# 보조 잠금 돌림쇠와 체인 걸쇠
-		if deadbolt:
-			var ly := 1.18
-			var lrose := lathe(g, [Vector2(0.0, 0.0), Vector2(0.027, 0.0), Vector2(0.024, 0.008), Vector2(0.0, 0.008)], ch, Vector3(hx, ly, 0.0205), 22)
-			lrose.rotation.x = PI / 2.0
-			rbox(g, Vector3(0.044, 0.012, 0.024), 0.0045, ch, Vector3(hx, ly, 0.038))
-		box(g, Vector3(0.022, 0.1, 0.004), hm, Vector3(hx + 0.03, 1.45, 0.022))
-		var chn := mat(0xb0b4b8, 0.28, 0.85)
-		for i in 10:
-			var a := float(i) / 9.0
-			var q: Vector3 = Vector3(hx + 0.03, 1.5, 0.03).lerp(Vector3(hx - 0.14, 1.44, 0.03), a)
+	var hx := -0.3
+	var rose := lathe(g, [Vector2(0.0, 0.0), Vector2(0.032, 0.0), Vector2(0.032, 0.003), Vector2(0.024, 0.009), Vector2(0.0, 0.009)], ch, Vector3(hx, handle_y, zf), 24)
+	rose.rotation.x = PI / 2.0
+	tube(g, [Vector3(hx, handle_y, zf + 0.004), Vector3(hx, handle_y, zf + 0.04), Vector3(hx + 0.015, handle_y, zf + 0.05), Vector3(hx + 0.1, handle_y, zf + 0.052), Vector3(hx + 0.12, handle_y - 0.004, zf + 0.046)], 0.0095, ch, 10, true, 6)
+	# 보조 잠금
+	if deadbolt:
+		var lrose := lathe(g, [Vector2(0.0, 0.0), Vector2(0.027, 0.0), Vector2(0.024, 0.008), Vector2(0.0, 0.008)], ch, Vector3(hx, 1.18, zf), 22)
+		lrose.rotation.x = PI / 2.0
+		rbox(g, Vector3(0.044, 0.012, 0.024), 0.0045, ch, Vector3(hx, 1.18, zf + 0.018))
+	# 체인 걸쇠: 문의 홈과 틀의 고리를 잇는다
+	if chain:
+		box(g, Vector3(0.022, 0.1, 0.004), hm, Vector3(hx + 0.03, 1.45, zf + 0.002))
+		var fx := -o.x / 2.0 - 0.03
+		rbox(g, Vector3(0.024, 0.04, 0.005), 0.0015, hm, Vector3(fx, 1.44, wz + 0.0185))
+		var chn := mat(0xb0b4b8, 0.28, 0.72)
+		for i in 12:
+			var a := float(i) / 11.0
+			var q: Vector3 = Vector3(hx + 0.03, 1.5, zf + 0.01).lerp(Vector3(fx, 1.44, wz + 0.024), a)
 			q.y -= sin(a * PI) * 0.1
 			var lk := ring(g, 0.0065, 0.0013, chn, q, 12, 4)
 			lk.rotation = Vector3(PI / 2.0 if i % 2 == 0 else 0.0, 0.0, 0.0)
 			lk.set_meta("ghost", true)
+	# 도어락 문의 안전 고리
+	if style == "officetel":
+		rbox(g, Vector3(0.03, 0.09, 0.008), 0.002, hm, Vector3(-0.385, 1.42, zf + 0.004))
+		tube(g, [Vector3(-0.385, 1.45, zf + 0.008), Vector3(-0.43, 1.45, zf + 0.022), Vector3(-0.47, 1.45, wz + 0.024)], 0.004, ch, 8)
+		tube(g, [Vector3(-0.385, 1.39, zf + 0.008), Vector3(-0.43, 1.39, zf + 0.022), Vector3(-0.47, 1.39, wz + 0.024)], 0.004, ch, 8)
+		rbox(g, Vector3(0.018, 0.09, 0.006), 0.002, hm, Vector3(-0.474, 1.42, wz + 0.019))
 	# 도어아이
-	var eye_c := Vector3(0, 1.5, 0.0205)
-	var eye := lathe(g, [Vector2(0.0, 0.0), Vector2(0.011, 0.0), Vector2(0.008, 0.008), Vector2(0.0, 0.009)], brass(0xb89a56, 0.32), eye_c, 14)
-	eye.rotation.x = PI / 2.0
-	cylz(g, 0.0042, 0.0005, glass(0x202830, 0.9, 0.08), eye_c + Vector3(0, 0, 0.0096), 12)
-	# 도어클로저 (위쪽)
-	rbox(g, Vector3(0.22, 0.05, 0.05), 0.012, painted(0xd8d4cc, 0.4), Vector3(-0.08, 1.92, 0.046))
-	cylz(g, 0.02, 0.02, steel(0x9a9a94, 0.3), Vector3(0.02, 1.92, 0.056), 14)
-	var arm := rbox(g, Vector3(0.24, 0.018, 0.012), 0.004, painted(0xa8a49c, 0.45), Vector3(0.14, 1.97, 0.065))
-	arm.rotation.z = 0.2
+	if viewer:
+		var eye_c := Vector3(0, 1.5, zf)
+		var eye := lathe(g, [Vector2(0.0, 0.0), Vector2(0.011, 0.0), Vector2(0.008, 0.008), Vector2(0.0, 0.009)], brass(0xb89a56, 0.32), eye_c, 14)
+		eye.rotation.x = PI / 2.0
+		cylz(g, 0.0042, 0.0005, glass(0x202830, 0.9, 0.08), eye_c + Vector3(0, 0, 0.0096), 12)
+	# 도어클로저: 문 위 몸통과 틀로 뻗은 팔
+	if closer:
+		var cl := painted(0xd8d4cc, 0.4)
+		rbox(g, Vector3(0.22, 0.05, 0.05), 0.012, cl, Vector3(-0.08, 1.9, zf + 0.026))
+		cylz(g, 0.02, 0.02, steel(0x9a9a94, 0.3), Vector3(0.02, 1.9, zf + 0.036), 14)
+		var arm := rbox(g, Vector3(0.26, 0.018, 0.012), 0.004, painted(0xa8a49c, 0.45), Vector3(0.14, 1.955, zf + 0.04))
+		arm.rotation.z = 0.2
+		rbox(g, Vector3(0.05, 0.03, 0.012), 0.003, cl, Vector3(0.26, 1.99, wz + 0.024))
 	return {"g": g}
 
 
@@ -1656,16 +1925,16 @@ static func _bed_premium(p: Dictionary) -> Dictionary:
 	cu.rotation = Vector3(PI / 2.0 - 0.35, 0.06, 0)
 	# 머리판: 받침판 앞에 세로로 누빈 줄 (창대 아래 0.8까지)
 	var hw := w + 0.06
-	soft_box(g, Vector3(hw, 0.7, 0.05), 0.015, velvet, Vector3(0, 0.43, -d / 2.0 + 0.005), Vector3i(8, 6, 2))
+	soft_box(g, Vector3(hw, 0.66, 0.05), 0.015, velvet, Vector3(0, 0.41, -d / 2.0 + 0.005), Vector3i(8, 6, 2))
 	var n := int(round(hw / 0.1))
 	var step := hw / n
 	var cap := CapsuleMesh.new()
 	cap.radius = step / 2.0
-	cap.height = 0.5
+	cap.height = 0.46
 	cap.radial_segments = 14
 	cap.rings = 6
 	for i in n:
-		var c := mi(g, cap, velvet, Vector3(-hw / 2.0 + step * (i + 0.5), 0.55, -d / 2.0 + 0.035))
+		var c := mi(g, cap, velvet, Vector3(-hw / 2.0 + step * (i + 0.5), 0.52, -d / 2.0 + 0.035))
 		c.scale = Vector3(1, 1, 0.6)
 	return {"g": g, "foot": Vector2(w, d)}
 
@@ -1737,91 +2006,6 @@ static func _puff(size: Vector3, flat_bottom: bool) -> ArrayMesh:
 		var f: float = maxf(0.1, (1.0 - pow(ux, 2.4)) * (1.0 - pow(uz, 2.4)))
 		var y: float = -hy + (v.y + hy) * f if flat_bottom else v.y * f
 		return Vector3(v.x * (1.0 - 0.07 * (1.0 - uz * uz)), y, v.z * (1.0 - 0.07 * (1.0 - ux * ux))))
-
-
-## 3장 오피스텔 창 (p.style == "premium"): 벽 두께만큼 나온 창틀과 테두리 · 대리석 창대 ·
-## 흰 미닫이 두 짝과 잠금쇠 · 유리에 비친 빛 · 천장 가까이 단 커튼 봉과 고리 ·
-## 주름 깊은 겉커튼 두 폭과 반쯤 친 속커튼. 원점은 유리 가운데, 벽면은 z -0.01.
-## p.rod_y · p.rod_x: 커튼 봉 높이와 양 끝 (오른쪽이 벽에 붙은 창은 봉을 짧게)
-static func _window_premium(p: Dictionary) -> Dictionary:
-	var g := node(null)
-	var w: float = p.get("w", 1.6)
-	var h: float = p.get("h", 1.1)
-	var gm := tmat(p.get("tex", "win_e3"), 1.0, {"unshaded": true})
-	gm.albedo_color = col(int(p.get("tint", 0x9aa4b0)))
-	quad(g, w, h, gm, Vector3.ZERO)
-	var trim := painted(0xf4f2ee, 0.5)
-	var dep := 0.12
-	box(g, Vector3(w + 0.06, 0.03, dep), trim, Vector3(0, h / 2.0 + 0.015, dep / 2.0 - 0.01))
-	for sx in [-1.0, 1.0]:
-		box(g, Vector3(0.03, h + 0.03, dep), trim, Vector3(sx * (w / 2.0 + 0.015), 0.015, dep / 2.0 - 0.01))
-		box(g, Vector3(0.065, h, 0.016), trim, Vector3(sx * (w / 2.0 + 0.0325), 0, dep - 0.002))
-	box(g, Vector3(w + 0.13, 0.065, 0.016), trim, Vector3(0, h / 2.0 + 0.0325, dep - 0.002))
-	box(g, Vector3(w + 0.22, 0.03, dep + 0.06), painted(0xebe8e3, 0.16), Vector3(0, -h / 2.0 - 0.015, (dep + 0.06) / 2.0 - 0.01))
-	box(g, Vector3(w + 0.13, 0.06, 0.014), trim, Vector3(0, -h / 2.0 - 0.06, -0.003))
-	# 흰 창틀과 미닫이 두 짝 (왼쪽은 안쪽 레일, 오른쪽은 바깥 레일, 가운데서 겹친다)
-	var pvc := painted(int(p.get("frame", 0xffffff)), 0.3)
-	box(g, Vector3(w, 0.05, 0.08), pvc, Vector3(0, h / 2.0 - 0.025, 0.03))
-	box(g, Vector3(w, 0.05, 0.08), pvc, Vector3(0, -h / 2.0 + 0.025, 0.03))
-	for sx in [-1.0, 1.0]:
-		box(g, Vector3(0.05, h - 0.1, 0.08), pvc, Vector3(sx * (w / 2.0 - 0.025), 0, 0.03))
-	var ow := w / 2.0 - 0.05
-	var sh := h - 0.1
-	var sheen := _glass_sheen()
-	var grip := mat(0xe9e9e6, 0.4)
-	for k in 2:
-		var x0 := -ow if k == 0 else -0.03
-		var x1 := 0.03 if k == 0 else ow
-		var cx := (x0 + x1) / 2.0
-		var sw := x1 - x0
-		var z := 0.022 if k == 0 else 0.05
-		box(g, Vector3(sw, 0.045, 0.028), pvc, Vector3(cx, sh / 2.0 - 0.0225, z))
-		box(g, Vector3(sw, 0.045, 0.028), pvc, Vector3(cx, -sh / 2.0 + 0.0225, z))
-		box(g, Vector3(0.045, sh - 0.09, 0.028), pvc, Vector3(x0 + 0.0225, 0, z))
-		box(g, Vector3(0.045, sh - 0.09, 0.028), pvc, Vector3(x1 - 0.0225, 0, z))
-		quad(g, sw - 0.09, sh - 0.09, sheen, Vector3(cx, 0, z))
-		box(g, Vector3(0.012, 0.15, 0.012), grip, Vector3(x0 + 0.0225 if k == 0 else x1 - 0.0225, -0.04, z + 0.02))
-	var metal := mat(0xc4c6c8, 0.35, 0.7)
-	box(g, Vector3(0.024, 0.06, 0.01), metal, Vector3(-0.0075, 0, 0.069))
-	var lv := box(g, Vector3(0.04, 0.01, 0.007), metal, Vector3(-0.0195, 0.014, 0.076))
-	lv.rotation.z = 0.45
-	if p.has("curtain"):
-		var gold := mat(0xd8c08c, 0.3, 0.7)
-		var ry: float = p.get("rod_y", h / 2.0 + 0.2)
-		var rx: Array = p.get("rod_x", [-(w / 2.0 + 0.3), w / 2.0 + 0.3])
-		var rx0: float = rx[0]
-		var rx1: float = rx[1]
-		var zr := 0.22
-		var zs := 0.15
-		rod(g, Vector3(rx0, ry, zr), Vector3(rx1, ry, zr), 0.011, gold, 12)
-		rod(g, Vector3(rx0 + 0.06, ry - 0.012, zs), Vector3(rx1 - 0.04, ry - 0.012, zs), 0.006, gold, 8)
-		sph(g, 0.021, gold, Vector3(rx0 - 0.012, ry, zr), 12)
-		sph(g, 0.021, gold, Vector3(rx1 + 0.012, ry, zr), 12)
-		for bx in [rx0 + 0.1, rx1 - 0.1]:
-			var wp := cyl(g, 0.022, 0.022, 0.008, gold, Vector3(bx, ry, -0.006), 14)
-			wp.rotation.x = PI / 2.0
-			rod(g, Vector3(bx, ry, -0.01), Vector3(bx, ry, zr + 0.012), 0.008, gold, 8)
-		# 겉커튼: 봉 고리에 걸려 창대 아래까지
-		var cm := pbr("fabric", int(p["curtain"]), 1.0, 0.0, {"rim_enabled": true, "rim": 0.25, "rim_tint": 0.5})
-		var top := ry - 0.035
-		var bot := -h / 2.0 - 0.08
-		for span in [[rx0 + 0.04, -w / 2.0 + 0.12], [w / 2.0 - 0.2, rx1 - 0.03]]:
-			var a: float = span[0]
-			var cw: float = span[1] - a
-			_drape(g, cm, cw, top - bot, 0.03, 0.075, Vector3(a + cw / 2.0, (top + bot) / 2.0, zr), false)
-			var nr := maxi(2, int(round(cw / 0.05)))
-			for i in nr + 1:
-				var rr := ring(g, 0.019, 0.0035, gold, Vector3(a + cw * i / nr, ry, zr))
-				rr.rotation.y = PI / 2.0
-		# 속커튼: 반쯤 비치는 흰 천, 창대 바로 위까지
-		var sm := mat(0xffffff, 1.0, 0.0, {"alpha": 0.42, "cull_off": true})
-		var stop := ry - 0.03
-		var sbot := -h / 2.0 + 0.006
-		for span in [[rx0 + 0.08, -0.4], [0.4, rx1 - 0.06]]:
-			var a: float = span[0]
-			var cw: float = span[1] - a
-			_drape(g, sm, cw, stop - sbot, 0.012, 0.055, Vector3(a + cw / 2.0, (stop + sbot) / 2.0, zs), true)
-	return {"g": g}
 
 
 ## 커튼 한 폭: 위는 고리에 잡혀 주름이 얕고, 아래로 갈수록 깊어지며 살짝 퍼진다. thin이면 얇은 한 겹 판

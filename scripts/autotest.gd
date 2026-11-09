@@ -1860,3 +1860,214 @@ func site_shots() -> void:
 	await _wait(1.6)
 	await _site_jpg("inspect")
 	get_tree().quit()
+
+
+## 시작 화면 배경: 방마다 왼쪽 · 오른쪽 끝 사진, 바뀌는 순서, 만들다 나가기 (--titlebg)
+func title_bg_test(o: String) -> void:
+	out = o
+	DirAccess.make_dir_recursive_absolute(out)
+	for k in range(100):
+		if Game.stage == "title":
+			break
+		await _wait(0.1)
+	const W_C := 800
+	const H_C := 450
+	var sheet := Image.create(W_C * 2, H_C * 5, false, Image.FORMAT_RGB8)
+	var worst := 1000.0
+	for i in 5:
+		var room = Game.world
+		var no := int(room.ep.no)
+		var yaw0: float = room.player.rotation.y
+		while room.t < 1.6:
+			await get_tree().process_frame
+		await RenderingServer.frame_post_draw
+		var img := get_viewport().get_texture().get_image()
+		img.convert(Image.FORMAT_RGB8)
+		img.resize(W_C, H_C, Image.INTERPOLATE_LANCZOS)
+		sheet.blit_rect(img, Rect2i(0, 0, W_C, H_C), Vector2i(0, i * H_C))
+		while is_instance_valid(room) and room.shot_left() > 1.3:
+			worst = minf(worst, Engine.get_frames_per_second())
+			await get_tree().process_frame
+		await RenderingServer.frame_post_draw
+		var img2 := get_viewport().get_texture().get_image()
+		img2.convert(Image.FORMAT_RGB8)
+		img2.resize(W_C, H_C, Image.INTERPOLATE_LANCZOS)
+		sheet.blit_rect(img2, Rect2i(0, 0, W_C, H_C), Vector2i(W_C, i * H_C))
+		print("TITLEBG ep", no, " yaw ", "%.2f" % yaw0, " -> ", "%.2f" % room.player.rotation.y, " len=", "%.1f" % room.shot_len, " next_ready=", Game.title_next != null and Game.title_next.bg_done, " fps_low=", worst)
+		worst = 1000.0
+		while Game.world == room:
+			await get_tree().process_frame
+		await _wait(1.3)
+	sheet.save_png(out.path_join("titlebg.png"))
+	# 다음 방을 만드는 중에 시작 화면을 떠나도 문제없는지
+	while Game.title_next == null:
+		await get_tree().process_frame
+	await get_tree().process_frame
+	var building: bool = not Game.title_next.bg_done
+	var nx = Game.title_next
+	Game.show_brief(Game.EPISODES[0])
+	await _wait(1.0)
+	print("TITLEBG leave while building=", building, " next_cleared=", Game.title_next == null, " freed=", not is_instance_valid(nx), " stage=", Game.stage)
+	get_tree().quit()
+
+
+## 가구끼리 파고든 곳 찾기 (--overlapcheck): 충돌 상자를 방 좌표로 옮겨 서로 겹친 깊이를 잰다
+func overlap_check() -> void:
+	await _wait(0.3)
+	for ep in Game.EPISODES:
+		var boxes := []
+		for f in ep.room.furniture:
+			var res: Dictionary = Build.furniture(f.t, f.get("p", {}))
+			var root: Node3D = res.g
+			var fx := Transform3D(Basis(Vector3.UP, deg_to_rad(f.get("ry", 0.0))), Vector3(f.x, f.get("y", 0.0), f.z))
+			var nodes: Array = root.find_children("*", "Node3D", true, false)
+			nodes.append(root)
+			for n in nodes:
+				if not n.has_meta("solids"):
+					continue
+				var chain := Transform3D.IDENTITY
+				var p: Node = n
+				while p != root and p != null:
+					chain = (p as Node3D).transform * chain
+					p = p.get_parent()
+				for s in n.get_meta("solids"):
+					boxes.append([f.t, fx * chain * (s[0] as Transform3D), (s[1] as Vector3) * 0.5])
+			root.free()
+		var found := {}
+		for i in boxes.size():
+			for j in range(i + 1, boxes.size()):
+				if boxes[i][0] == boxes[j][0]:
+					continue
+				var d := _obb_depth(boxes[i][1], boxes[i][2], boxes[j][1], boxes[j][2])
+				if d > 0.01:
+					var key := "%s x %s" % [boxes[i][0], boxes[j][0]]
+					if not found.has(key) or found[key][0] < d:
+						var c: Vector3 = (boxes[i][1].origin + boxes[j][1].origin) * 0.5
+						found[key] = [d, c]
+		var out_s := []
+		for k in found:
+			out_s.append("%s depth=%.3f near(%.2f, %.2f, %.2f)" % [k, found[k][0], found[k][1].x, found[k][1].y, found[k][1].z])
+		print("OVERLAP ep", int(ep.no), " ", out_s)
+	get_tree().quit()
+
+
+## 두 회전 상자가 겹친 깊이 (안 겹치면 0)
+func _obb_depth(a: Transform3D, ha: Vector3, b: Transform3D, hb: Vector3) -> float:
+	var ax := [a.basis.x.normalized(), a.basis.y.normalized(), a.basis.z.normalized()]
+	var bx := [b.basis.x.normalized(), b.basis.y.normalized(), b.basis.z.normalized()]
+	var axes := []
+	axes.append_array(ax)
+	axes.append_array(bx)
+	for p in ax:
+		for q in bx:
+			var c: Vector3 = (p as Vector3).cross(q)
+			if c.length() > 0.001:
+				axes.append(c.normalized())
+	var t: Vector3 = b.origin - a.origin
+	var best := 1000.0
+	for l in axes:
+		var ra: float = 0.0
+		var rb: float = 0.0
+		for i in 3:
+			ra += absf((ax[i] as Vector3).dot(l)) * ha[i]
+			rb += absf((bx[i] as Vector3).dot(l)) * hb[i]
+		var depth: float = ra + rb - absf(t.dot(l))
+		if depth <= 0.0:
+			return 0.0
+		best = minf(best, depth)
+	return best
+
+
+## 방마다 창문과 문을 정면에서 (--openshots)
+func opening_shots(o: String) -> void:
+	out = o
+	DirAccess.make_dir_recursive_absolute(out)
+	await _wait(0.6)
+	if (OS.get_cmdline_args() + OS.get_cmdline_user_args()).has("--setup"):
+		await _setup_shots()
+		return
+	const W_C := 800
+	const H_C := 450
+	var sheet := Image.create(W_C * 2, H_C * 5, false, Image.FORMAT_RGB8)
+	for ei in 5:
+		var room = await _enter(ei)
+		var win := {}
+		for f in room.R.furniture:
+			if f.t == "window":
+				win = f
+		room.flash_on = false
+		room.flash.visible = false
+		await _wait(2.0)
+		var cols := [[Vector3(float(win.x) * 0.92, 0, float(win.z) + 1.25), Vector3(win.x, float(win.y) - 0.05, win.z)], [Vector3(float(room.R.door.x) * 0.92, 0, float(room.D) / 2.0 - 1.45), Vector3(room.R.door.x, 1.05, float(room.D) / 2.0)]]
+		for c in 2:
+			room.player.position = cols[c][0]
+			for k in range(3):
+				await get_tree().physics_frame
+			await _look_at_point(room, cols[c][1])
+			await _wait(1.0)
+			await RenderingServer.frame_post_draw
+			var img := get_viewport().get_texture().get_image()
+			img.convert(Image.FORMAT_RGB8)
+			img.resize(W_C, H_C, Image.INTERPOLATE_LANCZOS)
+			sheet.blit_rect(img, Rect2i(0, 0, W_C, H_C), Vector2i(c * W_C, ei * H_C))
+	sheet.save_png(out.path_join("openings.png"))
+	print("OPENINGS done")
+	get_tree().quit()
+
+
+## 설치 화면 그림 재료 (--openshots --setup): 카메라를 수평으로 두고 화각을 넓혀 세로줄이 기울지 않게 찍는다
+func _setup_shots() -> void:
+	for ei in 5:
+		var room = await _enter(ei)
+		await _wait(4.0)
+		_site_hud(room, false)
+		room.H_.vignette.visible = false
+		room.cam.cull_mask &= ~Viewmodel.LAYER
+		var dz := float(room.D) / 2.0
+		var dx := float(room.R.door.x)
+		room.player.position = Vector3(dx, 0, dz - minf(2.2, float(room.D) - 0.5))
+		for k in range(3):
+			await get_tree().physics_frame
+		await _look_at_point(room, Vector3(dx, room.cam.global_position.y, dz))
+		room.cam.fov = 100.0
+		await _wait(1.2)
+		await RenderingServer.frame_post_draw
+		var img := get_viewport().get_texture().get_image()
+		img.convert(Image.FORMAT_RGB8)
+		img.save_png(out.path_join("door_%d.png" % ei))
+		print("SETUP door ", ei, " D=", room.D, " fov=", room.cam.fov, " cam=", room.cam.global_position)
+	get_tree().quit()
+
+
+## 시작 화면 배경을 만드는 동안 프레임이 얼마나 걸리는지 (--titleprobe)
+func title_build_probe() -> void:
+	for k in range(100):
+		if Game.stage == "title":
+			break
+		await _wait(0.1)
+	for round in 5:
+		while Game.title_next == null:
+			await get_tree().process_frame
+		var nx = Game.title_next
+		var last := Time.get_ticks_usec()
+		var t0 := last
+		var over33 := 0
+		var over66 := 0
+		var worst := 0
+		var frames := 0
+		while is_instance_valid(nx) and not nx.bg_done:
+			await get_tree().process_frame
+			var now := Time.get_ticks_usec()
+			var d := (now - last) / 1000
+			last = now
+			frames += 1
+			worst = maxi(worst, d)
+			if d > 33:
+				over33 += 1
+			if d > 66:
+				over66 += 1
+		print("PROBE next=ep", int(nx.ep.no), " total=", (Time.get_ticks_usec() - t0) / 1000, "ms frames=", frames, " worst=", worst, "ms over33=", over33, " over66=", over66)
+		while Game.title_next == nx:
+			await get_tree().process_frame
+		await _wait(0.5)
+	get_tree().quit()

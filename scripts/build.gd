@@ -4,11 +4,11 @@ extends RefCounted
 ## 가구는 furn.gd, 유품은 relic.gd, 손과 도구는 viewmodel.gd
 
 const DEG := PI / 180.0
-const PBR_TILE := {"wood": 1.5, "woodh": 1.5, "fabric": 18.0, "knit": 11.0, "fleece": 4.0, "leather": 9.0, "plastic": 14.0, "brushed": 5.0, "paint": 2.5, "rust": 2.5, "card": 5.0, "paper": 5.0}
-const PBR_BUMP := {"wood": 0.16, "woodh": 0.16, "fabric": 0.7, "knit": 0.75, "fleece": 0.7, "leather": 0.45, "plastic": 0.12, "brushed": 0.3, "paint": 0.35, "rust": 0.55, "card": 0.5, "paper": 0.3}
+const PBR_TILE := {"wood": 1.5, "woodh": 1.5, "fabric": 18.0, "knit": 11.0, "fleece": 4.0, "leather": 9.0, "plastic": 14.0, "brushed": 5.0, "paint": 2.5, "rust": 2.5, "card": 5.0, "paper": 5.0, "bubble": 8.0, "foil": 3.2}
+const PBR_BUMP := {"wood": 0.16, "woodh": 0.16, "fabric": 0.7, "knit": 0.75, "fleece": 0.7, "leather": 0.45, "plastic": 0.12, "brushed": 0.3, "paint": 0.35, "rust": 0.55, "card": 0.5, "paper": 0.3, "bubble": 1.0, "foil": 1.0}
 ## 버튼 · 건반에 새길 글자 (assets/tex/pbr/glyphs.png 한 칸 64px, 16칸씩)
 const GLYPHS := "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ+-*#.:/%()°▲▼◀▶●■=,<>?!&~'[];전원온도난방수예약외출강중정지회타이머풍량바람세기열림닫잠금문선택확인취소메뉴음채널입력등급냉장동에너효율초일시한자영아들ㅂㅈㄷㄱㅅㅛㅕㅑㅐㅔㅁㄴㅇㄹㅎㅗㅓㅏㅣㅋㅌㅊㅍㅠㅜㅡ"
-const PBR_NORMAL := {"fabric": true, "knit": true, "fleece": true, "leather": true, "rust": true}
+const PBR_NORMAL := {"fabric": true, "knit": true, "fleece": true, "leather": true, "rust": true, "bubble": true, "foil": true}
 const GLYPH_COLS := 16
 const GLYPH_ROWS := 12
 static var _mats := {}
@@ -744,6 +744,51 @@ static func sheet(parent: Node, w: float, h: float, facing: String, m: Material,
 		T.append_array([1.0, 0.0, 0.0, 1.0])
 	arr[Mesh.ARRAY_TANGENT] = T
 	arr[Mesh.ARRAY_INDEX] = PackedInt32Array([0, 1, 2, 0, 2, 3])
+	var am := ArrayMesh.new()
+	am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+	var n := MeshInstance3D.new()
+	n.mesh = am
+	n.material_override = m
+	n.position = pos
+	parent.add_child(n)
+	return n
+
+
+## 구멍 뚫린 벽: hole은 벽 가운데를 원점으로 한 사각형 (왼쪽 아래 + 크기). UV는 벽 전체 그림 그대로라 무늬가 이어진다
+static func wall_holed(parent: Node, w: float, h: float, hole: Rect2, m: Material, pos := Vector3.ZERO, tile := 1.0) -> MeshInstance3D:
+	var hw := w / 2.0
+	var hh := h / 2.0
+	var x0 := clampf(hole.position.x, -hw, hw)
+	var x1 := clampf(hole.end.x, -hw, hw)
+	var y0 := clampf(hole.position.y, -hh, hh)
+	var y1 := clampf(hole.end.y, -hh, hh)
+	var V := PackedVector3Array()
+	var N := PackedVector3Array()
+	var UV := PackedVector2Array()
+	var UV2 := PackedVector2Array()
+	var T := PackedFloat32Array()
+	var I := PackedInt32Array()
+	for r in [[-hw, -hh, x0, hh], [x1, -hh, hw, hh], [x0, y1, x1, hh], [x0, -hh, x1, y0]]:
+		if float(r[2]) - float(r[0]) < 0.0005 or float(r[3]) - float(r[1]) < 0.0005:
+			continue
+		var base := V.size()
+		for c in [[r[0], r[3]], [r[2], r[3]], [r[2], r[1]], [r[0], r[1]]]:
+			var x: float = c[0]
+			var y: float = c[1]
+			V.append(Vector3(x, y, 0.0))
+			N.append(Vector3.BACK)
+			UV.append(Vector2(x / w + 0.5, 0.5 - y / h))
+			UV2.append(Vector2(x, y) * tile)
+			T.append_array([1.0, 0.0, 0.0, 1.0])
+		I.append_array([base, base + 1, base + 2, base, base + 2, base + 3])
+	var arr := []
+	arr.resize(Mesh.ARRAY_MAX)
+	arr[Mesh.ARRAY_VERTEX] = V
+	arr[Mesh.ARRAY_NORMAL] = N
+	arr[Mesh.ARRAY_TEX_UV] = UV
+	arr[Mesh.ARRAY_TEX_UV2] = UV2
+	arr[Mesh.ARRAY_TANGENT] = T
+	arr[Mesh.ARRAY_INDEX] = I
 	var am := ArrayMesh.new()
 	am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
 	var n := MeshInstance3D.new()
