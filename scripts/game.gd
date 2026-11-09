@@ -5,7 +5,7 @@ const RoomScript := preload("res://scripts/room.gd")
 const InspectScript := preload("res://scripts/inspect.gd")
 const BoardScript := preload("res://scripts/board.gd")
 const SAVE_PATH := "user://save.json"
-const VERSION := "1.4.0"
+const VERSION := "1.4.1"
 const CONTACT := "eunyool100208@gmail.com"
 
 var EPISODES: Array = []
@@ -531,6 +531,8 @@ func show_title() -> void:
 	var col := Ui.vbox(0)
 	Ui.pin(col, 0, 0, 96, 84)
 	col.add_child(Ui.label("특수청소부의 기록", 18, Color("a39b8e"), Ui.serif))
+	# 큰 제목 글자는 줄 높이보다 위로 올라오므로 간격을 둔다
+	col.add_child(Ui.gap(14))
 	col.add_child(Ui.shadow(Ui.label("마지막 방", 84, Color("efe9df"), Ui.serif_b)))
 	col.add_child(Ui.gap(28))
 	if title_sel < 0 or title_sel >= EPISODES.size():
