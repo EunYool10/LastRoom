@@ -59,6 +59,7 @@ func _build_world() -> void:
 	e.ssao_enabled = true
 	e.glow_enabled = true
 	e.glow_intensity = 0.5
+	e.glow_hdr_threshold = 1.5
 	e.adjustment_enabled = true
 	e.adjustment_saturation = 0.9
 	e.adjustment_brightness = float(Game.settings.get("bright", 1.0))

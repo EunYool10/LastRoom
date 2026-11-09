@@ -5,7 +5,7 @@ const RoomScript := preload("res://scripts/room.gd")
 const InspectScript := preload("res://scripts/inspect.gd")
 const BoardScript := preload("res://scripts/board.gd")
 const SAVE_PATH := "user://save.json"
-const VERSION := "1.3.6"
+const VERSION := "1.4.0"
 const CONTACT := "eunyool100208@gmail.com"
 
 var EPISODES: Array = []
@@ -15,9 +15,9 @@ var TERMS: Dictionary = {}
 var ep: Dictionary = {}
 var S: Dictionary = {}
 var save := {}
-const DEFAULT_SETTINGS := {"sens": 1.0, "volume": 0.8, "sfx": 1.0, "amb": 1.0, "fullscreen": false, "bright": 1.0, "fov": 72.0, "quality": "high", "bob": true, "calm": false, "breath": true, "invert": false, "pad": 1.0, "crouch_hold": true, "bg_mute": false, "autoupdate": true}
+const DEFAULT_SETTINGS := {"sens": 1.0, "volume": 0.8, "sfx": 1.0, "amb": 1.0, "fullscreen": false, "bright": 1.0, "fov": 62.0, "view_v": 2.0, "quality": "high", "bob": true, "calm": false, "breath": true, "invert": false, "pad": 1.0, "crouch_hold": true, "bg_mute": false, "autoupdate": true}
 ## 기록 파일 · 백업 코드에서 읽은 값이 이 범위 · 보기를 벗어나면 기본값을 쓴다
-const SETTING_RANGE := {"sens": [0.3, 2.5], "volume": [0.0, 1.0], "sfx": [0.0, 1.0], "amb": [0.0, 1.0], "bright": [0.6, 1.6], "fov": [60.0, 90.0], "pad": [0.85, 1.2]}
+const SETTING_RANGE := {"sens": [0.3, 2.5], "volume": [0.0, 1.0], "sfx": [0.0, 1.0], "amb": [0.0, 1.0], "bright": [0.6, 1.6], "fov": [50.0, 90.0], "pad": [0.85, 1.2]}
 const SETTING_CHOICES := {"quality": ["low", "mid", "high"]}
 var settings: Dictionary = DEFAULT_SETTINGS.duplicate()
 var save_path := SAVE_PATH
@@ -100,6 +100,33 @@ func _ready() -> void:
 			at.click_test(test)
 		elif args.has("--hiddentest"):
 			at.hidden_test(test)
+		elif args.has("--glyphs"):
+			at.glyph_atlas()
+		elif args.has("--toolshots"):
+			at.tool_shots(test)
+		elif args.has("--buildtime"):
+			at.build_time()
+		elif args.has("--inspectshots"):
+			at.inspect_shots(test, ei if args.has("--one") else -1)
+		elif args.has("--restcheck"):
+			at.rest_check()
+		elif args.has("--fpswatch"):
+			at.fps_watch(ei)
+		elif args.has("--vmsheet"):
+			at.vm_sheet(test)
+		elif args.has("--siteshots"):
+			at.site_shots()
+		elif args.has("--roomshots"):
+			at.room_shots(test, ei if args.has("--one") else -1)
+		elif args.has("--modelsheet"):
+			var msk := "furniture"
+			var msf := ""
+			for a in args:
+				if a.begins_with("--kind="):
+					msk = a.split("=")[1]
+				if a.begins_with("--only="):
+					msf = a.split("=")[1]
+			at.model_sheet(test, msk, msf)
 		elif args.has("--furntest"):
 			at.furn_test(test)
 		elif args.has("--titletest"):
@@ -197,8 +224,12 @@ static func _clean_settings(s) -> Dictionary:
 	var out: Dictionary = DEFAULT_SETTINGS.duplicate()
 	if not (s is Dictionary):
 		return out
+	# 예전 기본 시야(72)로 저장된 기록은 새 기본값을 따른다
+	var old_view: bool = float(s.get("view_v", 0.0)) < 2.0 and float(s.get("fov", 72.0)) == 72.0
 	for k in DEFAULT_SETTINGS:
 		if not s.has(k):
+			continue
+		if k == "fov" and old_view:
 			continue
 		var v = s[k]
 		match typeof(DEFAULT_SETTINGS[k]):
@@ -321,7 +352,7 @@ func _build_layers() -> void:
 	Ui.full(grain)
 	grain.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var sh := Shader.new()
-	sh.code = "shader_type canvas_item;\nuniform float amount = 0.045;\nfloat rnd(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }\nvoid fragment(){ vec2 p = floor(FRAGCOORD.xy / 2.0); float n = rnd(p + fract(TIME * 7.13) * 91.7); COLOR = vec4(vec3(n), amount); }"
+	sh.code = "shader_type canvas_item;\nuniform float amount = 0.022;\nfloat rnd(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }\nvoid fragment(){ vec2 p = floor(FRAGCOORD.xy / 2.0); float n = rnd(p + fract(TIME * 7.13) * 91.7); COLOR = vec4(vec3(n), amount); }"
 	var smat := ShaderMaterial.new()
 	smat.shader = sh
 	grain.material = smat
@@ -1848,7 +1879,7 @@ func _settings_view(body: VBoxContainer) -> void:
 	if not touch:
 		_set_choice(body, "전체 화면", "F11로도 바꿀 수 있다", "fullscreen", ONOFF, func(_x): _apply_settings())
 	_set_ruler(body, "밝기", "방이 너무 어두우면 올린다", "bright", 0.6, 1.6, 0.1, pct, func(_x): apply_view())
-	_set_ruler(body, "시야", "한눈에 보이는 넓이. 기본 72°", "fov", 60.0, 90.0, 2.0, func(x: float) -> String: return "%d°" % roundi(x), func(_x): apply_view())
+	_set_ruler(body, "시야", "한눈에 보이는 넓이. 기본 62°", "fov", 50.0, 90.0, 2.0, func(x: float) -> String: return "%d°" % roundi(x), func(_x): apply_view())
 	_set_choice(body, "화질", "화면이 끊기면 낮춘다 (그림자 · 안개 · 해상도)", "quality", [["낮음", "low"], ["보통", "mid"], ["높음", "high"]], func(_x): apply_view())
 	_set_choice(body, "걷기 흔들림", "걸을 때 화면이 위아래로 흔들린다", "bob", ONOFF)
 	_set_choice(body, "깜빡임 줄이기", "깜빡이는 전등 · 손전등을 고르게 켠다", "calm", ONOFF)
@@ -2140,7 +2171,7 @@ func apply_view() -> void:
 		apply_quality_env(we.environment)
 	var shadows: bool = settings.get("quality", "high") != "low"
 	if stage == "room" and world.get("cam") is Camera3D:
-		world.cam.fov = float(settings.get("fov", 72.0))
+		world.cam.fov = float(settings.get("fov", DEFAULT_SETTINGS.fov))
 		world.flash.shadow_enabled = shadows
 	elif stage == "inspect" and world.get("L") is Dictionary and world.L.has("key"):
 		world.L.key.shadow_enabled = shadows

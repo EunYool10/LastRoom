@@ -7,6 +7,10 @@ const L_ENV := 4
 const L_STAIN := 8
 const L_DOOR := 16
 const RAY_MASK := 31
+const NECK_UP := 0.1
+const NECK_BACK := 0.08
+const WALK := 1.45
+const STRIDE := 0.72
 
 var ep: Dictionary
 var S: Dictionary
@@ -58,6 +62,11 @@ var stain_aim = null
 var crouch := 0.0
 var crouch_toggle := false
 var hint_said := false
+var trigger: Node3D
+var nozzle := Vector3.ZERO
+var step_n := 0
+var spray_t := 0.0
+var roll := 0.0
 
 
 func setup(e: Dictionary, state: Dictionary, is_preview := false) -> void:
@@ -70,6 +79,7 @@ func setup(e: Dictionary, state: Dictionary, is_preview := false) -> void:
 	H = R.size[2]
 	eye = R.eye
 	sens = 0.0022 * float(Game.settings.get("sens", 1.0))
+	Build.detail = 0 if Game.settings.get("quality", "high") == "low" or Game.touch else 1
 	_build_env()
 	_build_shell()
 	_build_furniture()
@@ -88,6 +98,7 @@ func setup(e: Dictionary, state: Dictionary, is_preview := false) -> void:
 	_build_hud()
 	_update_hud()
 	select_tool(1, true)
+	_warm_tools()
 	Sfx.set_loop("amb", 0.22)
 
 
@@ -105,7 +116,7 @@ func _build_env() -> void:
 	e.background_color = fogc
 	e.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	e.ambient_light_color = Build.col(int(R.hemi[0]))
-	e.ambient_light_energy = float(R.hemi[2]) * 1.4
+	e.ambient_light_energy = float(R.hemi[2]) * 1.6
 	e.tonemap_mode = Environment.TONE_MAPPER_ACES
 	e.tonemap_exposure = 1.05
 	e.ssao_enabled = true
@@ -145,31 +156,106 @@ func _static_box(size: Vector3, pos: Vector3, layer := L_SOLID, parent: Node = s
 
 
 func _solidify(g: Node) -> void:
-	for m in g.find_children("*", "MeshInstance3D", true, false):
-		var a: AABB = m.get_aabb()
-		_static_box(a.size.max(Vector3(0.01, 0.01, 0.01)), a.get_center(), L_SOLID, m)
+	var nodes: Array = g.find_children("*", "Node3D", true, false)
+	nodes.append(g)
+	for n in nodes:
+		if not n.has_meta("solids"):
+			continue
+		for s in n.get_meta("solids"):
+			var b := _static_box(s[1], Vector3.ZERO, L_SOLID, n)
+			b.transform = s[0]
+
+
+## 방 표면 재질: 그려 둔 그림 위에 미터 단위의 잔결 (긁힘 · 벽지 굴곡)
+func _surface_mat(tex_name: String, rough: float, detail_kind: String) -> StandardMaterial3D:
+	var m: StandardMaterial3D = Build.tmat(tex_name, rough).duplicate()
+	if Build.detail > 0 and detail_kind != "":
+		m.detail_enabled = true
+		m.detail_blend_mode = BaseMaterial3D.BLEND_MODE_MUL
+		m.detail_uv_layer = BaseMaterial3D.DETAIL_UV_2
+		m.detail_albedo = Build.tex("pbr/%s_a" % detail_kind)
+		m.detail_normal = Build.tex("pbr/%s_n" % detail_kind)
+		m.normal_enabled = true
+		m.normal_scale = 0.3
+	return m
 
 
 func _build_shell() -> void:
 	var k := "e%d" % int(ep.no)
-	Build.plane_up(self, W, D, Build.tmat(k + "_floor", 0.85))
-	Build.plane_down(self, W, D, Build.tmat(k + "_ceil", 1.0), Vector3(0, H, 0))
+	var floor_m := _surface_mat(k + "_floor", 0.72, "scuff")
+	floor_m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+	Build.sheet(self, W, D, "up", floor_m, Vector3.ZERO, 2.2)
+	var ceil_n := Build.sheet(self, W, D, "up", _surface_mat(k + "_ceil", 1.0, ""), Vector3(0, H, 0), 2.0)
+	ceil_n.rotation.x = PI
 	var bbc := 0xffffff if R.wall == "officetel" else (0x5a4632 if R.wall == "banjiha" else 0x8a7a64)
-	var bb := Build.mat(bbc, 0.6)
+	var bb := Build.painted(bbc, 0.46)
+	var bb2 := Build.painted(Build.shade(bbc, -0.06), 0.42)
 	var walls := [[W, Vector3(0, H / 2, -D / 2), 0.0], [W, Vector3(0, H / 2, D / 2), PI], [D, Vector3(-W / 2, H / 2, 0), PI / 2], [D, Vector3(W / 2, H / 2, 0), -PI / 2]]
 	for i in walls.size():
 		var wd: Array = walls[i]
-		var q := Build.quad(self, wd[0], H, Build.tmat("%s_wall%d" % [k, i], 0.95), wd[1])
+		var q := Build.sheet(self, wd[0], H, "wall", _surface_mat("%s_wall%d" % [k, i], 0.92, ""), wd[1], 2.4)
 		q.rotation.y = wd[2]
 		var n := Vector3(sin(wd[2]), 0, cos(wd[2]))
-		var b := Build.box(self, Vector3(wd[0], 0.07, 0.015), bb, Vector3(wd[1].x, 0.035, wd[1].z) + n * 0.0075)
+		# 걸레받이: 몸판과 위로 깎인 턱
+		var b := Build.rbox(self, Vector3(wd[0], 0.07, 0.015), 0.003, bb, Vector3(wd[1].x, 0.035, wd[1].z) + n * 0.0075)
 		b.rotation.y = wd[2]
+		var b2 := Build.rbox(self, Vector3(wd[0], 0.012, 0.02), 0.004, bb2, Vector3(wd[1].x, 0.074, wd[1].z) + n * 0.01)
+		b2.rotation.y = wd[2]
 	_static_box(Vector3(W + 0.4, 0.2, D + 0.4), Vector3(0, -0.1, 0))
 	_static_box(Vector3(W + 0.4, 0.2, D + 0.4), Vector3(0, H + 0.1, 0))
 	_static_box(Vector3(W + 0.4, H, 0.2), Vector3(0, H / 2, -D / 2 - 0.1))
 	_static_box(Vector3(W + 0.4, H, 0.2), Vector3(0, H / 2, D / 2 + 0.1))
 	_static_box(Vector3(0.2, H, D + 0.4), Vector3(-W / 2 - 0.1, H / 2, 0))
 	_static_box(Vector3(0.2, H, D + 0.4), Vector3(W / 2 + 0.1, H / 2, 0))
+	_build_fixtures()
+
+
+## 스위치 · 콘센트 · 천장 설비 (장마다 가구를 피한 자리)
+## [벽 (n/s/w/e), 벽을 따른 좌표, 높이]
+const OUTLETS := {1: [["e", 0.9, 0.3], ["n", 0.75, 0.3]], 2: [["s", -0.25, 0.3], ["e", -0.6, 0.3]], 3: [["w", 0.05, 0.3], ["e", 0.2, 0.32]], 4: [["e", 0.9, 0.3], ["n", 1.0, 0.3]], 5: [["n", 0.6, 0.3], ["w", -0.3, 0.3]]}
+## 문을 기준으로 스위치를 둘 쪽 (세상 x 부호)
+const SWITCH_SIDE := {1: -1.0, 2: 1.0, 3: -1.0, 4: -1.0, 5: 1.0}
+
+
+func _wall_fixture(res: Dictionary, wall: String, along: float, y: float) -> void:
+	Build.finish(res)
+	var g: Node3D = res.g
+	add_child(g)
+	match wall:
+		"n":
+			g.position = Vector3(along, y, -D / 2)
+		"s":
+			g.position = Vector3(along, y, D / 2)
+			g.rotation.y = PI
+		"w":
+			g.position = Vector3(-W / 2, y, along)
+			g.rotation.y = PI / 2
+		"e":
+			g.position = Vector3(W / 2, y, along)
+			g.rotation.y = -PI / 2
+
+
+func _ceil_fixture(res: Dictionary, x: float, z: float) -> void:
+	Build.finish(res)
+	var g: Node3D = res.g
+	add_child(g)
+	g.position = Vector3(x, H, z)
+
+
+func _build_fixtures() -> void:
+	var no := int(ep.no)
+	var side: float = SWITCH_SIDE.get(no, 1.0)
+	_wall_fixture(Furn.switch_plate(2 if no in [3, 5] else 1), "s", float(R.door.x) + side * 0.53, 1.2)
+	for o in OUTLETS.get(no, []):
+		_wall_fixture(Furn.outlet(), o[0], o[1], o[2])
+	_ceil_fixture(Furn.smoke_detector(), W * 0.2, D * 0.25)
+	if no in [1, 3]:
+		_ceil_fixture(Furn.sprinkler(), -W * 0.2, D * 0.12)
+	if no == 3:
+		for p in [[-1.0, 0.9], [1.0, 0.9], [-1.0, -0.9], [0.0, 0.0]]:
+			_ceil_fixture(Furn.downlight(), p[0], p[1])
+	if no == 5:
+		_ceil_fixture(Furn.ceiling_round(), 0.0, 0.0)
 
 
 func _build_furniture() -> void:
@@ -184,16 +270,11 @@ func _build_furniture() -> void:
 
 func _build_door() -> void:
 	var light: bool = R.wall == "officetel"
-	var g := Build.node(self, Vector3(R.door.x, 0, D / 2 - 0.025))
+	var res := Build.finish(Furn.door(light, 0.84 if light else 1.0, not light))
+	var g: Node3D = res.g
+	add_child(g)
+	g.position = Vector3(R.door.x, 0, D / 2 - 0.025)
 	g.rotation.y = PI
-	var dm := Build.mat(0xe9e4de if light else 0x6e5a48, 0.55)
-	var fm := Build.mat(0xffffff if light else 0x4e3e30, 0.6)
-	Build.box(g, Vector3(0.8, 2.0, 0.04), dm, Vector3(0, 1.0, 0))
-	Build.box(g, Vector3(0.06, 2.06, 0.07), fm, Vector3(-0.43, 1.03, 0))
-	Build.box(g, Vector3(0.06, 2.06, 0.07), fm, Vector3(0.43, 1.03, 0))
-	Build.box(g, Vector3(0.92, 0.06, 0.07), fm, Vector3(0, 2.06, 0))
-	var hm := Build.mat(0xc0c0c0, 0.25, 0.8)
-	Build.box(g, Vector3(0.12, 0.02, 0.02), hm, Vector3(0.28, 1.0, 0.04))
 	var body := _static_box(Vector3(0.8, 2.0, 0.06), Vector3(R.door.x, 1.0, D / 2 - 0.035), L_DOOR)
 	body.set_meta("ref", {"type": "door"})
 
@@ -273,10 +354,14 @@ func _build_lights() -> void:
 	for L in R.lights:
 		var o := OmniLight3D.new()
 		o.light_color = Build.col(int(L.color))
-		o.light_energy = float(L.i) * 2.0
+		o.light_energy = float(L.i) * (1.05 if L.get("name", "") == "ring" else 2.0)
 		o.omni_range = float(L.d)
 		o.omni_attenuation = 1.3
 		o.light_volumetric_fog_energy = 0.6
+		if Game.settings.get("quality", "high") == "high" and lights.is_empty():
+			o.shadow_enabled = true
+			o.shadow_blur = 1.6
+			o.omni_shadow_mode = OmniLight3D.SHADOW_CUBE
 		add_child(o)
 		o.position = Vector3(L.pos[0], L.pos[1], L.pos[2])
 		lights.append({"light": o, "base": o.light_energy, "flicker": L.get("flicker", false), "name": L.get("name", ""), "on": true})
@@ -291,18 +376,20 @@ func _build_player() -> void:
 	player.collision_mask = L_SOLID
 	var cs := CollisionShape3D.new()
 	var cap := CapsuleShape3D.new()
-	cap.radius = 0.27
+	cap.radius = 0.24
 	cap.height = 1.5
 	cs.shape = cap
 	cs.position.y = 0.86
 	player.add_child(cs)
 	add_child(player)
 	player.position = Vector3(R.spawn[0], 0, R.spawn[1])
+	# 머리: 목(눈 아래 NECK_UP, 뒤 NECK_BACK)을 축으로 숙이므로 내려다보면 눈이 앞으로 나간다
 	head = Node3D.new()
-	head.position.y = eye
+	head.position.y = eye - NECK_UP
 	player.add_child(head)
 	cam = Camera3D.new()
-	cam.fov = 72.0 if preview else float(Game.settings.get("fov", 72.0))
+	cam.position = Vector3(0, NECK_UP, -NECK_BACK)
+	cam.fov = Game.DEFAULT_SETTINGS.fov if preview else float(Game.settings.get("fov", Game.DEFAULT_SETTINGS.fov))
 	cam.near = 0.03
 	cam.far = 40.0
 	head.add_child(cam)
@@ -311,17 +398,27 @@ func _build_player() -> void:
 	flash.light_color = Color(1.0, 0.94, 0.84)
 	flash.light_energy = 3.2
 	flash.spot_range = 9.0
-	flash.spot_angle = 27.0
-	flash.spot_angle_attenuation = 1.6
+	flash.spot_angle = 31.0
+	flash.spot_angle_attenuation = 1.3
 	flash.shadow_enabled = Game.settings.get("quality", "high") != "low"
 	flash.light_volumetric_fog_energy = 1.2
 	flash.position = Vector3(0.06, -0.05, 0)
+	flash.light_cull_mask = 1
 	cam.add_child(flash)
 	var fill := OmniLight3D.new()
 	fill.light_color = Color(0.8, 0.84, 0.92)
 	fill.light_energy = 0.3
 	fill.omni_range = 2.4
+	fill.light_cull_mask = 1
 	cam.add_child(fill)
+	# 팔 전용 빛: 방이 어두워도 손이 보이되 너무 밝지 않게
+	var hand_fill := OmniLight3D.new()
+	hand_fill.light_color = Color(1.0, 0.96, 0.9)
+	hand_fill.light_energy = 0.42
+	hand_fill.omni_range = 1.4
+	hand_fill.light_cull_mask = Viewmodel.LAYER
+	hand_fill.position = Vector3(0.05, 0.12, -0.12)
+	cam.add_child(hand_fill)
 	pitch = -0.12
 	yaw = 0.0
 
@@ -348,30 +445,13 @@ func _build_flies() -> void:
 
 
 func _build_tools() -> void:
-	var glove := Build.mat(0x3d6fb2, 0.55)
-	var hand := Build.node(cam)
-	Build.box(hand, Vector3(0.085, 0.03, 0.1), glove)
-	for i in range(4):
-		var f := Build.cyl(hand, 0.009, 0.009, 0.07, glove, Vector3(-0.03 + i * 0.02, 0, -0.08), 8)
-		f.rotation.x = PI / 2 - 0.3
-	var th := Build.cyl(hand, 0.01, 0.01, 0.06, glove, Vector3(0.05, 0, -0.02), 8)
-	th.rotation = Vector3(PI / 2, 0, -0.9)
-	hand.set_meta("base", Vector3(0.19, -0.18, -0.34))
-	hand.rotation = Vector3(-0.35, 0.35, 0.2)
-	hand.scale = Vector3.ONE * 0.85
-	var sp := Build.node(cam)
-	Build.cyl(sp, 0.032, 0.034, 0.14, Build.mat(0x6fc3b3, 0.2, 0.0, {"alpha": 0.8}))
-	Build.band(sp, 0.0345, 0.05, Build.tmat("spray_label", 0.7), -0.01)
-	Build.box(sp, Vector3(0.046, 0.05, 0.075), Build.mat(0xf2f2f2, 0.4), Vector3(0, 0.092, -0.01))
-	var nz := Build.cyl(sp, 0.007, 0.009, 0.035, Build.mat(0xd8452e), Vector3(0, 0.105, -0.062), 10)
-	nz.rotation.x = PI / 2
-	Build.box(sp, Vector3(0.012, 0.045, 0.014), Build.mat(0xd8452e), Vector3(0, 0.062, -0.042))
-	sp.set_meta("base", Vector3(0.2, -0.2, -0.38))
-	sp.rotation = Vector3(-0.1, 0.35, 0)
-	sp.scale = Vector3.ONE * 0.85
+	var vm := Viewmodel.make(cam)
+	tools = {1: vm[1], 2: vm[2], 3: vm[3]}
+	trigger = vm.trigger
+	nozzle = vm.nozzle + (vm[2] as Node3D).get_meta("base")
 	spray_fx = CPUParticles3D.new()
 	spray_fx.emitting = false
-	spray_fx.amount = 140
+	spray_fx.amount = 200
 	spray_fx.lifetime = 0.45
 	spray_fx.local_coords = false
 	spray_fx.direction = Vector3(-0.12, 0.08, -1)
@@ -382,29 +462,40 @@ func _build_tools() -> void:
 	spray_fx.scale_amount_min = 0.5
 	spray_fx.scale_amount_max = 1.2
 	var pq := QuadMesh.new()
-	pq.size = Vector2(0.025, 0.025)
+	pq.size = Vector2(0.018, 0.018)
 	var pm := StandardMaterial3D.new()
 	pm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	pm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	pm.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
-	pm.albedo_color = Color(0.9, 0.97, 0.94, 0.35)
+	pm.albedo_color = Color(0.92, 0.97, 0.95, 0.3)
+	var pgrad := Gradient.new()
+	pgrad.offsets = PackedFloat32Array([0.0, 0.5, 1.0])
+	pgrad.colors = PackedColorArray([Color(1, 1, 1, 0.85), Color(1, 1, 1, 0.34), Color(1, 1, 1, 0)])
+	var ptex := GradientTexture2D.new()
+	ptex.gradient = pgrad
+	ptex.fill = GradientTexture2D.FILL_RADIAL
+	ptex.fill_from = Vector2(0.5, 0.5)
+	ptex.fill_to = Vector2(1.0, 0.5)
+	ptex.width = 32
+	ptex.height = 32
+	pm.albedo_texture = ptex
 	pq.material = pm
 	spray_fx.mesh = pq
 	cam.add_child(spray_fx)
-	spray_fx.position = Vector3(0.15, -0.1, -0.44)
-	var sc := Build.node(cam)
-	Build.cyl(sc, 0.012, 0.012, 0.3, Build.mat(0x2b6fd1, 0.4), Vector3(0, 0.15, 0), 10)
-	Build.box(sc, Vector3(0.13, 0.034, 0.066), Build.mat(0xf2c230, 0.5), Vector3(0, 0.31, 0))
-	Build.box(sc, Vector3(0.12, 0.02, 0.056), Build.mat(0x3a3a3a, 1.0), Vector3(0, 0.29, 0))
-	sc.set_meta("base", Vector3(0.19, -0.3, -0.42))
-	sc.rotation = Vector3(-1.1, 0.25, 0.15)
-	sc.scale = Vector3.ONE * 0.85
-	tools = {1: hand, 2: sp, 3: sc}
+	spray_fx.position = Viewmodel.to_world(nozzle, cam.fov)
 	for tn in tools.values():
 		tn.position = tn.get_meta("base")
-	for n in tools.values():
-		for m in n.find_children("*", "MeshInstance3D", true, false):
-			m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+
+
+## 도구 재질을 입장 안내 화면 뒤에서 미리 그려, 처음 바꿀 때 끊기지 않게 한다
+func _warm_tools() -> void:
+	for k in tools:
+		tools[k].visible = true
+	for i in 3:
+		await get_tree().process_frame
+	if is_inside_tree():
+		for k in tools:
+			tools[k].visible = k == tool
 
 
 # ───────────────────────────── HUD
@@ -434,7 +525,7 @@ func _build_hud() -> void:
 	gt.fill_to = Vector2(1.0, 0.5)
 	var grad := Gradient.new()
 	grad.offsets = PackedFloat32Array([0.0, 0.55, 1.0])
-	grad.colors = PackedColorArray([Color(0, 0, 0, 0), Color(0, 0, 0, 0.25), Color(0, 0, 0, 0.92)])
+	grad.colors = PackedColorArray([Color(0, 0, 0, 0), Color(0, 0, 0, 0.1), Color(0, 0, 0, 0.62)])
 	gt.gradient = grad
 	vg.texture = gt
 	vg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -1101,20 +1192,26 @@ func _physics_process(dt: float) -> void:
 	var hold_key := Input.is_physical_key_pressed(KEY_C) or (not OS.has_feature("web") and Input.is_physical_key_pressed(KEY_CTRL))
 	var want_crouch: bool = crouch_toggle or (Game.settings.get("crouch_hold", true) and hold_key)
 	crouch = move_toward(crouch, 1.0 if want_crouch else 0.0, dt * 5.0)
-	var target := (-b.z * inp.y + b.x * inp.x) * 1.7 * (1.0 - 0.45 * crouch)
+	var target := (-b.z * inp.y + b.x * inp.x) * WALK * (1.0 - 0.45 * crouch)
 	target.y = 0
 	player.velocity = player.velocity.lerp(target, min(1.0, dt * 10.0))
 	player.move_and_slide()
 	player.position.y = 0
 	moving = Vector2(player.velocity.x, player.velocity.z).length()
-	if moving > 0.3:
-		bob += dt * moving * 5.2
-		step_t += dt * moving
-		if step_t > 0.85:
-			step_t = 0.0
+	if moving > 0.2:
+		# 한 걸음(STRIDE)마다 머리가 한 번 오르내린다
+		bob += dt * moving * PI / STRIDE
+		var n := int(bob / PI)
+		if n != step_n:
+			step_n = n
 			Sfx.step()
 	var low: float = lerp(eye, max(0.85, eye - 0.62), crouch)
-	head.position.y = low + sin(bob * 2.0) * 0.018 * min(1.0, moving) * (1.0 if Game.settings.get("bob", true) else 0.0)
+	var sway_on: float = (1.0 if Game.settings.get("bob", true) else 0.0) * min(1.0, moving / WALK)
+	head.position.y = low - NECK_UP + (absf(sin(bob)) - 0.64) * 0.022 * sway_on
+	head.position.x = sin(bob) * 0.008 * sway_on
+	var side_v: float = player.velocity.dot(b.x) / WALK
+	roll = lerpf(roll, (-side_v * 0.012 + sin(bob) * 0.0035) * (1.0 if Game.settings.get("bob", true) else 0.0), min(1.0, dt * 8.0))
+	cam.rotation.z = roll
 	if card != null and card.liftable:
 		var tgt: Vector3 = cam.global_transform * Vector3(0, -0.05, -0.5)
 		card.root.global_position = card.root.global_position.lerp(tgt, min(1.0, dt * 12.0))
@@ -1293,7 +1390,13 @@ func _update_tools(dt: float) -> void:
 		return
 	var base: Vector3 = g.get_meta("base")
 	var bb: float = min(1.0, moving)
-	var p := base + Vector3(sin(bob) * 0.008 * bb, absf(cos(bob)) * 0.01 * bb - switch_t * 0.8, 0)
+	var p := base + Vector3(sin(bob) * 0.006 * bb, absf(cos(bob)) * 0.008 * bb - switch_t * 0.8, 0)
+	if trigger != null:
+		trigger.rotation.x = lerpf(trigger.rotation.x, 0.42 if using and tool == 2 and card == null else 0.0, min(1.0, dt * 22.0))
+	spray_fx.position = Viewmodel.to_world(nozzle, cam.fov)
+	# 뿌리기를 멈추면 조금 뒤에 입자를 치운다 (화면에 남지 않게)
+	spray_t = 0.7 if using and tool == 2 and card == null else maxf(0.0, spray_t - dt)
+	spray_fx.visible = spray_t > 0.0
 	if using and tool == 2:
 		p += Vector3(0, randf() * 0.003, 0.008 + randf() * 0.004)
 	if using and tool == 3:

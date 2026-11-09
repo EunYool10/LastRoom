@@ -1,18 +1,18 @@
 {
-  "version": "1.3.6",
-  "date": "2026-11-05",
+  "version": "1.4.0",
+  "date": "2026-11-09",
   "notes": [
-    "처음 화면의 의뢰 목록이 한 장짜리 작업 일지로 바뀌었어요.",
-    "끝낸 의뢰는 등급 도장, 아직 맡지 않은 의뢰는 '새 의뢰', 잠긴 의뢰는 봉인 도장으로 바로 구분돼요.",
-    "1.3.5: 3장 창문 · 링 라이트 · 침대 · 옷 행거를 새로 만들었어요."
+    "방과 물건, 손과 도구를 실제처럼 새로 만들었어요.",
+    "리모컨과 키보드, 도어락, 폴더폰은 버튼 하나하나까지 볼 수 있어요.",
+    "시야를 사람 눈에 가깝게 고쳐서 방이 휘어 보이지 않아요."
   ],
-  "windows": "https://github.com/EunYool10/LastRoom/releases/download/v1.3.6/LastRoom-Setup-1.3.6.exe",
-  "android": "https://github.com/EunYool10/LastRoom/releases/download/v1.3.6/LastRoom-1.3.6-android.apk",
-  "mac": "https://github.com/EunYool10/LastRoom/releases/download/v1.3.6/LastRoom-1.3.6-mac.zip",
+  "windows": "https://github.com/EunYool10/LastRoom/releases/download/v1.4.0/LastRoom-Setup-1.4.0.exe",
+  "android": "https://github.com/EunYool10/LastRoom/releases/download/v1.4.0/LastRoom-1.4.0-android.apk",
+  "mac": "https://github.com/EunYool10/LastRoom/releases/download/v1.4.0/LastRoom-1.4.0-mac.zip",
   "sha256": {
-    "windows": "d4ae2abbd7e5aaa7eb5c7008bafba19f4a8560d5be6f0aa28c92187aa6f2be7b",
-    "android": "b9ee2475841941fa4ed9b7e6f11612d81f16ce723e4746f96397630bc10eeb6d",
-    "mac": "622ecfccc6902cb705030f19268b396ca25603539a0e5e28d4348b1dd1b5934b"
+    "windows": "2b6815399c31095f6419b48e5a5abc7a3d3ba1fb5f2701ae18ae7436a874bb48",
+    "android": "43e94d90bc7b444f8be13601f2a3e1e12bc134790aba198aa58b6939c1d11926",
+    "mac": "87e9154bc34511f9e74b2c3a0f4cc475062a5afc6b014638112ead135d684dfb"
   },
   "page": "https://eunyool10.github.io/LastRoom/",
   "terms": "2026-11-03"

@@ -239,11 +239,11 @@ func _face(room, target: Vector3, dist := 0.95) -> void:
 	room.player.position = Vector3(target.x, 0, target.z) + dir * dist
 	for i in range(3):
 		await get_tree().physics_frame
-	var p: Vector3 = room.player.position
-	var to := target - Vector3(p.x, room.eye, p.z)
-	room.yaw = atan2(-to.x, -to.z)
-	room.pitch = atan2(to.y, Vector2(to.x, to.z).length())
-	for i in range(3):
+	for k in range(3):
+		var to: Vector3 = target - room.cam.global_position
+		room.yaw = atan2(-to.x, -to.z)
+		room.pitch = atan2(to.y, Vector2(to.x, to.z).length())
+		await get_tree().physics_frame
 		await get_tree().physics_frame
 
 
@@ -866,6 +866,10 @@ func look_test(o: String) -> void:
 	room.complete = true
 	room.try_exit()
 	await _wait(2.6)
+	for k in range(60):
+		if Game.stage == "inspect":
+			break
+		await _wait(0.1)
 	var ins = Game.world
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	ins.select("diary")
@@ -1418,4 +1422,441 @@ func furn_test(o: String) -> void:
 	await _look_at_point(room, Vector3(1.04, 1.45, -0.2))
 	await _wait(0.6)
 	await _shot("ch1_rail")
+	get_tree().quit()
+
+
+# ───────────── 방 전체 · 모델 시트 사진 (--roomshots --modelsheet)
+const ROOM_VIEWS := {
+	0: [[Vector3(0.5, 0, 1.2), Vector3(-0.3, 1.0, -1.6)], [Vector3(-0.3, 0, -0.6), Vector3(0.6, 1.0, 1.6)]],
+	1: [[Vector3(1.2, 0, 1.1), Vector3(-1.0, 0.8, -1.4)], [Vector3(-0.8, 0, -0.9), Vector3(1.4, 0.9, 1.2)]],
+	2: [[Vector3(-1.4, 0, 1.25), Vector3(1.0, 1.0, -1.6)], [Vector3(0.3, 0, -1.0), Vector3(-1.2, 1.0, 1.5)]],
+	3: [[Vector3(-0.9, 0, 1.25), Vector3(0.5, 0.9, -1.6)], [Vector3(0.6, 0, -0.7), Vector3(-1.0, 1.0, 1.4)]],
+	4: [[Vector3(1.1, 0, 1.15), Vector3(-0.8, 0.9, -1.4)], [Vector3(-0.5, 0, -0.2), Vector3(1.2, 1.0, 1.3)]],
+}
+
+
+func room_shots(o: String, only: int) -> void:
+	out = o
+	DirAccess.make_dir_recursive_absolute(out)
+	await _wait(0.8)
+	for ei in ROOM_VIEWS:
+		if only >= 0 and ei != only:
+			continue
+		var room = await _enter(ei)
+		var vs: Array = ROOM_VIEWS[ei]
+		await _wait(0.6)
+		await _shot("ep%d_spawn" % (ei + 1))
+		for i in vs.size():
+			room.player.position = vs[i][0]
+			for k in range(3):
+				await get_tree().physics_frame
+			await _look_at_point(room, vs[i][1])
+			await _wait(0.7)
+			await _shot("ep%d_view%d" % [ei + 1, i])
+		await _wait(3.5)
+		print("ROOM ep", ei + 1, " draws=", RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME), " objs=", RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_OBJECTS_IN_FRAME), " prims=", RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME), " fps=", Engine.get_frames_per_second())
+	get_tree().quit()
+
+
+## 모델을 한 장에 격자로 찍는다. kind: furniture / item, 각 칸 CELL px
+func model_sheet(o: String, kind: String, filter: String) -> void:
+	out = o
+	DirAccess.make_dir_recursive_absolute(out)
+	await _wait(0.5)
+	var list := _sheet_list(kind)
+	if filter != "":
+		var keep := filter.split(",")
+		list = list.filter(func(e): return e[0] in keep)
+	const CELL := 520
+	const COLS := 4
+	const PER := 12
+	var vp := SubViewport.new()
+	vp.size = Vector2i(CELL, CELL)
+	vp.own_world_3d = true
+	vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	vp.msaa_3d = Viewport.MSAA_4X
+	add_child(vp)
+	var we := WorldEnvironment.new()
+	var env := Environment.new()
+	env.background_mode = Environment.BG_COLOR
+	env.background_color = Color(0.42, 0.42, 0.43)
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_color = Color(0.85, 0.85, 0.9)
+	env.ambient_light_energy = 0.3
+	env.reflected_light_source = Environment.REFLECTION_SOURCE_BG
+	env.tonemap_mode = Environment.TONE_MAPPER_ACES
+	env.ssao_enabled = true
+	we.environment = env
+	vp.add_child(we)
+	var sun := DirectionalLight3D.new()
+	sun.rotation = Vector3(-0.85, 0.7, 0)
+	sun.light_energy = 0.8
+	sun.shadow_enabled = true
+	vp.add_child(sun)
+	var fill := DirectionalLight3D.new()
+	fill.rotation = Vector3(-0.3, -2.3, 0)
+	fill.light_energy = 0.22
+	vp.add_child(fill)
+	var cam := Camera3D.new()
+	cam.fov = 28.0
+	cam.near = 0.01
+	vp.add_child(cam)
+	var page := 0
+	var i := 0
+	while i < list.size():
+		var sheet := Image.create(CELL * COLS, CELL * int(PER / COLS), false, Image.FORMAT_RGB8)
+		for slot in PER:
+			if i >= list.size():
+				break
+			var e: Array = list[i]
+			var res: Dictionary = Build.furniture(e[0], e[1]) if kind == "furniture" else Build.item(e[0], e[1])
+			var g: Node3D = res.g
+			vp.add_child(g)
+			var a := _world_aabb(g)
+			var c := a.get_center()
+			var r: float = maxf(a.size.length() * 0.5, 0.03)
+			var dir := Vector3(0.62, 0.55, 1.0).normalized()
+			cam.position = c + dir * (r / sin(deg_to_rad(cam.fov * 0.5)) * 1.05)
+			cam.near = maxf(0.005, r * 0.1)
+			cam.look_at(c, Vector3.UP)
+			for f in range(3):
+				await RenderingServer.frame_post_draw
+			var img := vp.get_texture().get_image()
+			img.convert(Image.FORMAT_RGB8)
+			sheet.blit_rect(img, Rect2i(0, 0, CELL, CELL), Vector2i((slot % COLS) * CELL, int(slot / COLS) * CELL))
+			g.free()
+			i += 1
+		sheet.save_png(out.path_join("sheet_%s_%02d.png" % [kind, page]))
+		print("SHEET ", kind, " page ", page, " up to ", i)
+		page += 1
+	get_tree().quit()
+
+
+func _world_aabb(g: Node3D) -> AABB:
+	var out_a := AABB()
+	var first := true
+	for m in g.find_children("*", "MeshInstance3D", true, false):
+		if m.has_meta("uv_only") or not m.is_visible_in_tree():
+			continue
+		var a: AABB = m.global_transform * m.get_aabb()
+		out_a = a if first else out_a.merge(a)
+		first = false
+	return out_a
+
+
+func _sheet_list(kind: String) -> Array:
+	var seen := {}
+	var list := []
+	for ep in Game.EPISODES:
+		if kind == "furniture":
+			for f in ep.room.furniture:
+				var key: String = f.t + str(f.get("p", {}).get("style", ""))
+				if not seen.has(key):
+					seen[key] = true
+					list.append([f.t, f.get("p", {})])
+		else:
+			for d in ep.items:
+				var key: String = d.model + str(d.get("p", {}).get("tex", ""))
+				if not seen.has(d.model):
+					seen[d.model] = true
+					seen[key] = true
+					list.append([d.model, d.get("p", {})])
+	return list
+
+
+## 글자 아틀라스 굽기 (--glyphs): assets/tex/pbr/glyphs.png
+func glyph_atlas() -> void:
+	var cell := 64
+	var vp := SubViewport.new()
+	vp.size = Vector2i(cell * Build.GLYPH_COLS, cell * Build.GLYPH_ROWS)
+	vp.transparent_bg = true
+	vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	add_child(vp)
+	var c := Control.new()
+	vp.add_child(c)
+	var font: Font = load("res://assets/fonts/NanumGothic-Bold.ttf")
+	c.draw.connect(func():
+		var s: String = Build.GLYPHS
+		for i in s.length():
+			var ch := s[i]
+			var fs: int = 46
+			var w := font.get_string_size(ch, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+			var x := (i % Build.GLYPH_COLS) * cell + (cell - w) / 2.0
+			var y := int(i / Build.GLYPH_COLS) * cell + cell * 0.5 + font.get_ascent(fs) * 0.5 - font.get_descent(fs) * 0.22
+			c.draw_string(font, Vector2(x, y), ch, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color.WHITE))
+	c.queue_redraw()
+	for k in 4:
+		await RenderingServer.frame_post_draw
+	var img := vp.get_texture().get_image()
+	img.save_png(ProjectSettings.globalize_path("res://assets/tex/pbr/glyphs.png"))
+	print("GLYPHS ", Build.GLYPHS.length(), " cells of ", Build.GLYPH_COLS * Build.GLYPH_ROWS)
+	get_tree().quit()
+
+
+## 손 · 분무기 · 스크러버 사진 (--toolshots)
+func tool_shots(o: String) -> void:
+	out = o
+	DirAccess.make_dir_recursive_absolute(out)
+	await _wait(0.8)
+	var room = await _enter(0)
+	room.player.position = Vector3(0.1, 0, 0.1)
+	await _look_at_point(room, Vector3(-0.3, 0.9, -1.4))
+	await _wait(0.5)
+	await _shot("tool_hand")
+	room.select_tool(2)
+	await _wait(2.6)
+	await _shot("tool_spray")
+	room.using = true
+	await _wait(0.5)
+	await _shot("tool_spray_on")
+	room.using = false
+	room.select_tool(3)
+	await _wait(2.6)
+	await _shot("tool_scrub")
+	get_tree().quit()
+
+
+## 장마다 모델 만드는 시간 (--buildtime)
+func build_time() -> void:
+	await _wait(0.3)
+	for ep in Game.EPISODES:
+		var t0 := Time.get_ticks_usec()
+		var parts := []
+		for f in ep.room.furniture:
+			parts.append(Build.furniture(f.t, f.get("p", {})))
+		var t1 := Time.get_ticks_usec()
+		for d in ep.items:
+			parts.append(Build.item(d.model, d.get("p", {})))
+		var t2 := Time.get_ticks_usec()
+		print("BUILD ep", int(ep.no), " furniture=", (t1 - t0) / 1000, "ms items=", (t2 - t1) / 1000, "ms")
+		for r in parts:
+			r.g.free()
+	get_tree().quit()
+
+
+## 작업실에서 유품을 하나씩 찍어 한 장에 모은다 (--inspectshots)
+func inspect_shots(o: String, only: int) -> void:
+	out = o
+	DirAccess.make_dir_recursive_absolute(out)
+	await _wait(0.8)
+	const W_C := 640
+	const H_C := 360
+	const COLS := 3
+	for ei in range(Game.EPISODES.size()):
+		if only >= 0 and ei != only:
+			continue
+		var room = await _enter(ei)
+		for it in room.items:
+			if it.state != "gone":
+				room.sort_item(it, it.def.kind != "trash")
+		for s2 in room.stains:
+			s2.done = true
+			s2.progress = 1.0
+		room.complete = true
+		room.try_exit()
+		for k in range(120):
+			if Game.stage == "inspect":
+				break
+			await _wait(0.1)
+		await _wait(1.0)
+		var ins = Game.world
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		var defs: Array = ins._item_defs()
+		var rows := int(ceil(defs.size() / float(COLS)))
+		var sheet := Image.create(W_C * COLS, H_C * rows, false, Image.FORMAT_RGB8)
+		for i in defs.size():
+			ins.select(defs[i].id)
+			await _wait(0.9)
+			await RenderingServer.frame_post_draw
+			var img := get_viewport().get_texture().get_image()
+			img.convert(Image.FORMAT_RGB8)
+			img.resize(W_C, H_C, Image.INTERPOLATE_LANCZOS)
+			sheet.blit_rect(img, Rect2i(0, 0, W_C, H_C), Vector2i((i % COLS) * W_C, int(i / COLS) * H_C))
+		sheet.save_png(out.path_join("inspect_ep%d.png" % (ei + 1)))
+		print("INSPECT ep", ei + 1, " items=", defs.size())
+	get_tree().quit()
+
+
+## 물건이 가구 위에 제대로 놓였는지 (--restcheck): 물건 위 3cm에서 아래로 쏘아 윗면과의 차이를 잰다
+func rest_check() -> void:
+	await _wait(0.5)
+	for ei in range(Game.EPISODES.size()):
+		var room = await _enter(ei)
+		await _wait(0.2)
+		var space: PhysicsDirectSpaceState3D = room.get_world_3d().direct_space_state
+		var bad := []
+		for it in room.items:
+			var p: Vector3 = it.root.global_position
+			if it.get("hidden", false):
+				continue
+			var from := p + Vector3(0, 0.03, 0)
+			var q := PhysicsRayQueryParameters3D.create(from, p - Vector3(0, 0.3, 0), 1)
+			var hit := space.intersect_ray(q)
+			if hit.is_empty():
+				bad.append("%s noraycast y=%.3f" % [it.def.id, p.y])
+				continue
+			var gap: float = p.y - hit.position.y
+			if absf(gap) > 0.012:
+				bad.append("%s model=%s y=%.3f top=%.3f gap=%.3f" % [it.def.id, it.def.model, p.y, hit.position.y, gap])
+		print("REST ep", ei + 1, " ", bad)
+	get_tree().quit()
+
+
+## 한 방에 오래 머무르며 프레임 재기 (--fpswatch --ep=N)
+func fps_watch(ei: int) -> void:
+	await _wait(0.6)
+	var room = await _enter(ei)
+	room.player.position = ROOM_VIEWS[ei][0][0]
+	await _look_at_point(room, ROOM_VIEWS[ei][0][1])
+	for ar in OS.get_cmdline_user_args():
+		if ar.begins_with("--msaa="):
+			get_viewport().msaa_3d = int(ar.substr(7))
+		if ar == "--nofog":
+			room.world_env.environment.volumetric_fog_enabled = false
+		if ar == "--nossao":
+			room.world_env.environment.ssao_enabled = false
+	var vp := get_viewport().get_viewport_rid()
+	RenderingServer.viewport_set_measure_render_time(vp, true)
+	await _wait(2.5)
+	var sum := 0.0
+	var n2 := 0
+	for k in range(120):
+		await RenderingServer.frame_post_draw
+		sum += RenderingServer.viewport_get_measured_render_time_gpu(vp)
+		n2 += 1
+	print("GPU ep", ei + 1, " ms=", "%.2f" % (sum / n2), " prims=", RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME), " draws=", RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME))
+	get_tree().quit()
+
+
+## 손 · 분무기 · 솔을 세 각도로 (--vmsheet)
+func vm_sheet(o: String) -> void:
+	out = o
+	DirAccess.make_dir_recursive_absolute(out)
+	await _wait(0.4)
+	const CELL := 620
+	var vp := SubViewport.new()
+	vp.size = Vector2i(CELL, CELL)
+	vp.own_world_3d = true
+	vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	vp.msaa_3d = Viewport.MSAA_4X
+	add_child(vp)
+	var we := WorldEnvironment.new()
+	var env := Environment.new()
+	env.background_mode = Environment.BG_COLOR
+	env.background_color = Color(0.34, 0.34, 0.35)
+	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	env.ambient_light_color = Color(0.85, 0.85, 0.9)
+	env.ambient_light_energy = 0.45
+	env.tonemap_mode = Environment.TONE_MAPPER_ACES
+	env.ssao_enabled = true
+	we.environment = env
+	vp.add_child(we)
+	var sun := DirectionalLight3D.new()
+	sun.rotation = Vector3(-0.85, 0.7, 0)
+	sun.light_energy = 1.1
+	sun.shadow_enabled = true
+	vp.add_child(sun)
+	var fill := DirectionalLight3D.new()
+	fill.rotation = Vector3(-0.3, -2.3, 0)
+	fill.light_energy = 0.3
+	vp.add_child(fill)
+	var cam := Camera3D.new()
+	cam.fov = 30.0
+	cam.near = 0.02
+	vp.add_child(cam)
+	var root := Node3D.new()
+	vp.add_child(root)
+	var vm := Viewmodel.make(root, true)
+	var sheet := Image.create(CELL * 3, CELL * 3, false, Image.FORMAT_RGB8)
+	var views := [Vector3(0.22, 0.2, 0.42), Vector3(-0.42, 0.14, -0.46), Vector3(-0.1, 0.62, -0.2)]
+	var look := [Vector3(-0.03, -0.01, -0.09), Vector3(-0.02, 0.01, -0.1), Vector3(-0.02, 0.0, -0.11)]
+	for t in 3:
+		for k in [1, 2, 3]:
+			vm[k].visible = k == t + 1
+			vm[k].rotation = Vector3.ZERO
+		for v in 3:
+			cam.position = look[t] + views[v] * (1.0 if t != 1 else 1.1)
+			cam.look_at(look[t], Vector3.UP)
+			for f in range(3):
+				await RenderingServer.frame_post_draw
+			var img := vp.get_texture().get_image()
+			img.convert(Image.FORMAT_RGB8)
+			sheet.blit_rect(img, Rect2i(0, 0, CELL, CELL), Vector2i(v * CELL, t * CELL))
+	sheet.save_png(out.path_join("vm.png"))
+	get_tree().quit()
+
+
+## 사진용: 글자를 숨기고 가장자리 어둠과 (keep이면) 가운데 안내만 남긴다
+func _site_hud(room, keep: bool) -> void:
+	var root: Control = room.H_.vignette.get_parent()
+	var pr: Node = room.H_.pname.get_parent()
+	for c in root.get_children():
+		if c != room.H_.vignette and not (keep and (c == pr or c == room.H_.cross)):
+			c.visible = false
+
+
+func _site_jpg(name: String) -> void:
+	await RenderingServer.frame_post_draw
+	var img := get_viewport().get_texture().get_image()
+	img.convert(Image.FORMAT_RGB8)
+	var w := img.get_width()
+	var h := img.get_height()
+	var cw := mini(w, int(h * 1.6))
+	var ch := int(cw / 1.6)
+	var crop := img.get_region(Rect2i((w - cw) / 2, (h - ch) / 2, cw, ch))
+	crop.resize(1280, 800, Image.INTERPOLATE_LANCZOS)
+	crop.save_jpg(ProjectSettings.globalize_path("res://site/img/%s.jpg" % name), 0.86)
+	print("SITE ", name)
+
+
+## 내려받기 사이트 사진 찍기 (--siteshots)
+func site_shots() -> void:
+	await _wait(0.8)
+	var room = await _enter(0)
+	await _wait(6.0)
+	# 대표 사진: 고시원 책상 쪽, 손은 그대로, 글자는 숨김
+	room.player.position = Vector3(0.45, 0, 0.75)
+	await _look_at_point(room, Vector3(-0.42, 0.98, -1.5))
+	_site_hud(room, false)
+	await _wait(1.0)
+	await _site_jpg("hero")
+	# 얼룩 닦기: 바닥 얼룩에 소독약을 뿌리는 화면
+	var target = room.stains[0]
+	for st in room.stains:
+		if float(st.def.pos[1]) < 0.1:
+			target = st
+	var p: Vector3 = Vector3(target.def.pos[0], target.def.pos[1], target.def.pos[2])
+	room.player.position = Vector3(p.x + 0.35, 0, p.z + 1.05)
+	await _look_at_point(room, p)
+	room.select_tool(2)
+	await _wait(2.4)
+	room.using = true
+	_site_hud(room, true)
+	await _wait(1.1)
+	await _site_jpg("clean")
+	room.using = false
+	# 유품 조사: 2장 폴더폰
+	room = await _enter(1)
+	for it in room.items:
+		if it.state != "gone":
+			room.sort_item(it, it.def.kind != "trash")
+	for s2 in room.stains:
+		s2.done = true
+		s2.progress = 1.0
+	room.complete = true
+	room.try_exit()
+	for k in range(120):
+		if Game.stage == "inspect":
+			break
+		await _wait(0.1)
+	await _wait(1.0)
+	var ins = Game.world
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	ins.select("flip2")
+	for c in get_tree().root.find_children("*", "CanvasLayer", true, false):
+		if c.layer < 45:
+			c.visible = false
+	ins.dist *= 0.74
+	await _wait(1.6)
+	await _site_jpg("inspect")
 	get_tree().quit()
