@@ -1558,8 +1558,11 @@ func build_background(e: Dictionary, state: Dictionary) -> void:
 
 ## 이번 프레임 몫을 다 썼으면 다음 프레임으로 넘긴다. 취소되면 방을 치우고 true
 func _bg_pause() -> bool:
-	if Time.get_ticks_msec() - _bg_t >= BG_SLICE_MS:
+	if Time.get_ticks_msec() - _bg_t >= BG_SLICE_MS or Game.title_input_recent():
 		await get_tree().process_frame
+		# 메뉴를 만지는 동안에는 짓지 않고 기다린다
+		while Game.title_input_recent() and not bg_cancel:
+			await get_tree().process_frame
 		_bg_t = Time.get_ticks_msec()
 	if bg_cancel:
 		queue_free()

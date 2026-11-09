@@ -380,6 +380,10 @@ func pause_test(o: String, ei: int) -> void:
 	await _wait(0.6)
 	Game.show_pause(false)
 	await _wait(0.8)
+	var rows := Game.pause_root.find_children("*", "Button", true, false)
+	if rows.size() > 3:
+		rows[3].mouse_entered.emit()
+	await _wait(0.2)
 	await _shot("pause")
 	Game.hide_pause()
 	await _wait(0.6)
@@ -1986,6 +1990,9 @@ func opening_shots(o: String) -> void:
 	if (OS.get_cmdline_args() + OS.get_cmdline_user_args()).has("--setup"):
 		await _setup_shots()
 		return
+	if (OS.get_cmdline_args() + OS.get_cmdline_user_args()).has("--rowtest"):
+		await _row_test()
+		return
 	const W_C := 800
 	const H_C := 450
 	var sheet := Image.create(W_C * 2, H_C * 5, false, Image.FORMAT_RGB8)
@@ -2012,6 +2019,41 @@ func opening_shots(o: String) -> void:
 			sheet.blit_rect(img, Rect2i(0, 0, W_C, H_C), Vector2i(c * W_C, ei * H_C))
 	sheet.save_png(out.path_join("openings.png"))
 	print("OPENINGS done")
+	get_tree().quit()
+
+
+## 처음 화면 의뢰 줄 누르기 (--openshots --rowtest): 뒤 배경을 만들고 바꾸는 동안에도 눌리는지 본다
+func _row_test() -> void:
+	for i in range(100):
+		if Game.stage == "title" and Game.T_.has("tabs"):
+			break
+		await _wait(0.1)
+	await _wait(1.0)
+	var miss := 0
+	var n := 0
+	var slowest := 0
+	var end_ms := Time.get_ticks_msec() + 26000
+	while Time.get_ticks_msec() < end_ms:
+		var target: int = wrapi(int(Game.title_sel) + 1 + randi() % 3, 0, Game.EPISODES.size())
+		var b: Button = Game.T_.tabs[target]
+		var r := b.get_global_rect()
+		var p := Vector2(r.position.x + r.size.x * randf_range(0.03, 0.97), r.position.y + r.size.y * randf_range(0.06, 0.94))
+		var t0 := Time.get_ticks_msec()
+		await _mouse(p, true)
+		await _mouse(p, false)
+		var ok := false
+		for k in range(40):
+			if Game.title_sel == target:
+				ok = true
+				break
+			await get_tree().process_frame
+		slowest = maxi(slowest, Time.get_ticks_msec() - t0)
+		n += 1
+		if not ok:
+			miss += 1
+			print("ROW miss target=", target, " at ", p, " hovered=", get_viewport().gui_get_hovered_control(), " building=", Game.title_next != null, " swapping=", Game.title_swapping)
+		await _wait(randf_range(0.1, 1.3))
+	print("ROW clicks=", n, " misses=", miss, " slowest_ms=", slowest, " room_index=", Game.title_i)
 	get_tree().quit()
 
 

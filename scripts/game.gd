@@ -5,7 +5,7 @@ const RoomScript := preload("res://scripts/room.gd")
 const InspectScript := preload("res://scripts/inspect.gd")
 const BoardScript := preload("res://scripts/board.gd")
 const SAVE_PATH := "user://save.json"
-const VERSION := "1.4.2"
+const VERSION := "1.4.3"
 const CONTACT := "eunyool100208@gmail.com"
 
 var EPISODES: Array = []
@@ -31,6 +31,9 @@ var title_i := 0
 var title_next: Node = null
 var title_fade: ColorRect
 var title_swapping := false
+## 처음 화면에서 마지막으로 마우스 · 키 · 터치를 쓴 때. 그 직후에는 뒤 배경 작업을 미뤄 메뉴가 바로 반응하게 한다
+const TITLE_INPUT_QUIET_MS := 450
+var title_input_ms := -100000
 var board: Control = null
 var paused := false
 var modal_open := false
@@ -518,6 +521,10 @@ func _unlocked(i: int) -> bool:
 
 
 ## 시작 화면 배경: 카메라가 방을 왼쪽에서 오른쪽으로 훑고 나면 어두워졌다가 다음 장의 방으로 넘어간다
+func title_input_recent() -> bool:
+	return stage == "title" and Time.get_ticks_msec() - title_input_ms < TITLE_INPUT_QUIET_MS
+
+
 func _title_bg_stop() -> void:
 	if is_instance_valid(title_next):
 		title_next.cancel_background()
@@ -538,7 +545,7 @@ func _title_bg_tick() -> void:
 			add_child(title_next)
 			title_next.build_background(EPISODES[(title_i + 1) % EPISODES.size()], _new_state())
 		return
-	if title_next.bg_done and world.shot_left() <= TITLE_FADE_OUT:
+	if title_next.bg_done and world.shot_left() <= TITLE_FADE_OUT and not title_input_recent():
 		title_swapping = true
 		var tw := title_fade.create_tween()
 		tw.tween_property(title_fade, "color:a", 1.0, TITLE_FADE_OUT)
@@ -694,6 +701,7 @@ func _case_tab(i: int) -> Button:
 	b.focus_mode = Control.FOCUS_NONE
 	b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	b.custom_minimum_size = Vector2(500, 72)
+	b.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
 	var mk := Ui.Marker.new()
 	mk.last = i == EPISODES.size() - 1
 	Ui.full(mk)
@@ -951,42 +959,66 @@ func _room_overlays(show: bool) -> void:
 	toast_box.visible = show
 
 
-func _keycap(text: String) -> Control:
-	var p := PanelContainer.new()
-	var s := StyleBoxFlat.new()
-	s.bg_color = Color(1, 1, 1, 0.06)
-	s.border_color = Color(1, 1, 1, 0.3)
-	s.set_border_width_all(1)
-	s.border_width_bottom = 2
-	s.set_corner_radius_all(4)
-	s.content_margin_left = 9
-	s.content_margin_right = 9
-	s.content_margin_top = 3
-	s.content_margin_bottom = 4
-	p.add_theme_stylebox_override("panel", s)
-	p.add_child(Ui.label(text, 14, Color("efe9df"), Ui.sans_b))
-	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	return p
+## 멈춤 메뉴 한 줄: 작업 일지의 줄처럼 줄 전체가 눌리고, 버튼을 누르는 순간 바로 동작한다
+func _pause_row(i: int, title: String, desc: String, cb: Callable, last: bool) -> Button:
+	var b := Button.new()
+	b.flat = true
+	b.focus_mode = Control.FOCUS_NONE
+	b.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
+	b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	b.custom_minimum_size = Vector2(0, 68)
+	var mk := Ui.Marker.new()
+	mk.last = last
+	Ui.full(mk)
+	b.add_child(mk)
+	var h := Ui.hbox(0)
+	h.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	Ui.full(h)
+	h.offset_left = 18
+	h.offset_right = -22
+	var no := Ui.label("%02d" % (i + 1), 28, Ui.BLUE_INK, Ui.hand)
+	no.custom_minimum_size = Vector2(46, 0)
+	no.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	no.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	h.add_child(no)
+	var ml := ColorRect.new()
+	ml.color = Color(Ui.RED, 0.42)
+	ml.custom_minimum_size = Vector2(2, 0)
+	ml.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	h.add_child(ml)
+	var sp := Control.new()
+	sp.custom_minimum_size = Vector2(18, 0)
+	sp.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	h.add_child(sp)
+	var tv := Ui.vbox(2)
+	tv.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tv.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	tv.add_child(Ui.label(title, 22, Ui.INK, Ui.serif_b))
+	tv.add_child(Ui.label(desc, 13, Ui.INK_DIM, Ui.sans))
+	h.add_child(Ui.expand(tv))
+	b.add_child(h)
+	b.mouse_entered.connect(func(): mk.set_level(2))
+	b.mouse_exited.connect(func(): mk.set_level(0))
+	b.pressed.connect(func():
+		Sfx.play("ui", 0.5)
+		cb.call())
+	return b
 
 
-## 왼쪽에 표식이 붙는 메뉴 항목 (타이틀과 같은 방식)
-func _menu_item(text: String, size: int, cb: Callable, primary: bool) -> Control:
-	var row := Ui.hbox(0)
-	var b := Ui.button(text, size, cb, Ui.serif_b if primary else Ui.serif, Color("efe9df") if primary else Color("b9b1a4"))
-	var mark := Ui.label("—", size, Ui.ACCENT, Ui.serif)
-	mark.modulate.a = 0.0
-	mark.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	mark.anchor_top = 0
-	mark.anchor_bottom = 1
-	mark.offset_left = -size * 1.6
-	mark.offset_right = -8
-	b.add_child(mark)
-	b.mouse_entered.connect(func(): mark.modulate.a = 1.0)
-	b.mouse_exited.connect(func(): mark.modulate.a = 0.0)
-	row.add_child(b)
-	return row
+func _pause_stat(box: VBoxContainer, what: String, value: String) -> void:
+	var r := Ui.hbox(0)
+	r.custom_minimum_size = Vector2(0, 40)
+	var w := Ui.label(what, 16, Ui.INK_DIM, Ui.sans)
+	w.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	r.add_child(Ui.expand(w))
+	var l := Ui.label(value, 26, Ui.BLUE_INK, Ui.hand)
+	l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	r.add_child(l)
+	box.add_child(r)
+	box.add_child(Ui.DotRule.new())
 
 
+## 멈춤 화면: 클립보드에 끼운 작업 일지 한 장. 왼쪽은 진행 상황과 메뉴, 오른쪽은 조작 안내
 func show_pause(first := false) -> void:
 	paused = true
 	get_tree().paused = true
@@ -1004,55 +1036,81 @@ func show_pause(first := false) -> void:
 	sm.shader = sh
 	bg.material = sm
 	pause_root.add_child(bg)
-	# 왼쪽: 제목 · 진행 · 메뉴
-	var left := Ui.vbox(6)
-	Ui.pin(left, 0, 0.5, 130, 0, 1, 0)
-	left.add_child(Ui.label("%d장 · %s" % [int(ep.no), ep.place], 15, Ui.ACCENT, Ui.spaced))
-	left.add_child(Ui.label("현장 진입" if first else "잠시 멈춤", 58, Color("efe9df"), Ui.serif_b))
+	var paper := Ui.ClipPaper.new()
+	var v := Ui.vbox(6)
+	var head := Ui.hbox(0)
+	var hv := Ui.vbox(9)
+	hv.add_child(Ui.label("현장 작업 일지", 14, Ui.INK_DIM, Ui.spaced))
+	hv.add_child(Ui.label("현장 진입" if first else "잠시 멈춤", 38, Ui.INK, Ui.serif_b))
+	head.add_child(Ui.expand(hv))
+	var where := Ui.label("%d장 · %s" % [int(ep.no), ep.place], 26, Ui.BLUE_INK, Ui.hand)
+	where.size_flags_vertical = Control.SIZE_SHRINK_END
+	head.add_child(where)
+	v.add_child(head)
+	v.add_child(Ui.rule(0.6, 2))
+	v.add_child(Ui.gap(8))
+	var cols := Ui.hbox(30)
+	# 왼쪽: 진행 상황과 메뉴
+	var left := Ui.vbox(0)
+	left.custom_minimum_size = Vector2(500, 0)
 	if first:
-		left.add_child(Ui.label("방독 마스크를 쓰고, 문을 연다.", 19, Color("a39b8e"), Ui.serif))
-		left.add_child(Ui.gap(18))
-		var goal := Ui.label("얼룩에 소독약을 뿌리고 문질러 닦아 낸다.\n물건마다 유족에게 남길지, 버릴지 정한다.\n다 끝나면 현관으로 나간다.", 17, Color("cfc9bf"), Ui.sans, true)
-		goal.custom_minimum_size = Vector2(520, 0)
+		left.add_child(Ui.label("방독 마스크를 쓰고, 문을 연다.", 27, Ui.BLUE_INK, Ui.hand))
+		left.add_child(Ui.gap(6))
+		var goal := Ui.label("얼룩에 소독약을 뿌리고 문질러 닦아 낸다.\n물건마다 유족에게 남길지, 버릴지 정한다.\n다 끝나면 현관으로 나간다.", 16, Ui.INK_DIM, Ui.sans, true)
 		goal.add_theme_constant_override("line_spacing", 6)
 		left.add_child(goal)
 	elif world and world.has_method("_counts"):
 		var c: Dictionary = world._counts()
-		left.add_child(Ui.label("오염 제거 %d / %d     유품 분류 %d / %d     단서 %d" % [c.sdone, c.stotal, c.sorted, c.total, S.clues.size()], 17, Color("a39b8e"), Ui.sans))
-	left.add_child(Ui.gap(40))
-	left.add_child(_menu_item("작업 시작" if first else "계속하기", 32, hide_pause, true))
-	left.add_child(Ui.gap(4))
+		_pause_stat(left, "오염 제거", "%d / %d" % [c.sdone, c.stotal])
+		_pause_stat(left, "유품 분류", "%d / %d" % [c.sorted, c.total])
+		_pause_stat(left, "찾은 단서", str(S.clues.size()))
+	left.add_child(Ui.gap(14))
+	var items := [["작업 시작" if first else "계속하기", "문을 열고 현장으로 들어간다" if first else "하던 작업으로 돌아간다", hide_pause]]
 	if not first:
-		left.add_child(_menu_item("보관함", 22, open_inventory, false))
-		left.add_child(_menu_item("설정", 22, open_settings, false))
-	left.add_child(_menu_item("장 선택으로", 22, quit_to_title, false))
-	pause_root.add_child(left)
-	# 오른쪽: 조작 안내 카드
-	var card := Ui.panel(Ui.dark_box(0.5, 30, 0.1))
-	Ui.pin(card, 1, 0.5, -130, 0, -1, 0)
-	var cv := Ui.vbox(13)
-	cv.add_child(Ui.label("조작", 15, Ui.ACCENT, Ui.spaced))
-	cv.add_child(Ui.gap(2))
+		items.append(["보관함", "넣은 물건과 버린 물건을 살펴본다", open_inventory])
+		items.append(["설정", "화면 · 소리 · 조작을 바꾼다", open_settings])
+	items.append(["장 선택으로", "이번 작업을 그만두고 의뢰 목록으로 돌아간다", quit_to_title])
+	for i in items.size():
+		left.add_child(_pause_row(i, items[i][0], items[i][1], items[i][2], i == items.size() - 1))
+	cols.add_child(left)
+	cols.add_child(Ui.vrule(0.2))
+	# 오른쪽: 조작 안내
+	var right := Ui.vbox(0)
+	right.custom_minimum_size = Vector2(450, 0)
+	right.add_child(Ui.label("조작 안내", 14, Ui.INK_DIM, Ui.spaced))
+	right.add_child(Ui.gap(4))
 	var rows := [[["W", "A", "S", "D"], "이동"], [["마우스"], "둘러보기"], [["1", "2", "3"], "손 · 소독 분무기 · 스크러버"], [["왼쪽 클릭 유지"], "도구 사용 · 스크러버는 누른 채 문지르기"], [["E"], "집어 보기 · 조사 · 보관함에 넣기"], [["Q"], "폐기"], [["X", "오른쪽 클릭"], "내려놓기"], [["F"], "손전등"], [["I", "Tab"], "보관함 열기"], [["C"] if OS.has_feature("web") else ["Ctrl"], "누르고 있는 동안 숙이기" if settings.get("crouch_hold", true) else "누를 때마다 숙이기 · 일어서기"]]
 	if touch:
 		rows = [[["왼쪽 화면 끌기"], "이동"], [["오른쪽 화면 끌기"], "둘러보기"], [["손", "분무기", "스크러버"], "도구 바꾸기"], [["집기 · 뿌리기"], "누르고 있으면 도구 사용"], [["보관", "폐기"], "들고 있는 물건 분류"], [["내려놓기"], "제자리에 두기"], [["손전등"], "손전등 켜고 끄기"], [["보관함"], "넣은 물건 보기 · 꺼내기"], [["숙이기"], "숙이기 · 일어서기"]]
 	for row in rows:
-		var r := Ui.hbox(16)
-		var caps := Ui.hbox(4)
-		caps.custom_minimum_size = Vector2(196, 0)
-		for k in row[0]:
-			caps.add_child(_keycap(k))
-		r.add_child(caps)
-		var l := Ui.label(row[1], 16, Color("d8d2c8"), Ui.sans)
-		l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		r.add_child(l)
-		cv.add_child(r)
-	card.add_child(cv)
-	pause_root.add_child(card)
+		var names := PackedStringArray(row[0])
+		var one_char := true
+		for k in names:
+			if k.length() != 1:
+				one_char = false
+		var r := Ui.hbox(12)
+		r.custom_minimum_size = Vector2(0, 41)
+		var keys := Ui.label(("  " if one_char else " · ").join(names), 15, Ui.INK, Ui.sans_b)
+		keys.custom_minimum_size = Vector2(132, 0)
+		keys.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		r.add_child(keys)
+		var d := Ui.label(row[1], 15, Ui.INK_DIM, Ui.sans)
+		d.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		r.add_child(Ui.expand(d))
+		right.add_child(r)
+		right.add_child(Ui.DotRule.new())
+	cols.add_child(right)
+	v.add_child(cols)
 	if not touch:
-		var hint := Ui.label("Esc   " + ("작업 시작" if first else "계속하기"), 14, Color(1, 1, 1, 0.38), Ui.sans)
-		Ui.pin(hint, 0, 1, 130, -44, 1, -1)
-		pause_root.add_child(hint)
+		v.add_child(Ui.gap(4))
+		v.add_child(Ui.label("Esc   " + ("작업 시작" if first else "계속하기"), 14, Ui.INK_DIM, Ui.sans))
+	paper.add_child(v)
+	var board := Ui.panel(Ui.board_box())
+	board.add_child(paper)
+	var center := CenterContainer.new()
+	Ui.full(center)
+	center.add_child(board)
+	pause_root.add_child(center)
 	pause_root.visible = true
 
 
@@ -1364,6 +1422,8 @@ func _process(dt: float) -> void:
 
 
 func _input(event: InputEvent) -> void:
+	if stage == "title" and (event is InputEventMouse or event is InputEventKey or event is InputEventScreenTouch or event is InputEventScreenDrag):
+		title_input_ms = Time.get_ticks_msec()
 	if event is InputEventKey and event.pressed and not event.echo:
 		if stage == "intro" and event.physical_keycode != KEY_F11:
 			_intro_end()
@@ -1837,7 +1897,7 @@ func open_settings(tab := -1) -> void:
 	var v := Ui.vbox(6)
 	# 머리: 양식 이름 · 제목 | 양식 번호 · 점검일
 	var head := Ui.hbox(0)
-	var hv := Ui.vbox(0)
+	var hv := Ui.vbox(9)
 	hv.add_child(Ui.label("현장 장비 점검표", 14, Ui.INK_DIM, Ui.spaced))
 	hv.add_child(Ui.label("설정", 34, Ui.INK, Ui.serif_b))
 	head.add_child(Ui.expand(hv))

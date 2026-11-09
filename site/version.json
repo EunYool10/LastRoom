@@ -1,19 +1,19 @@
 {
-  "version": "1.4.2",
-  "date": "2026-11-09",
+  "version": "1.4.3",
+  "date": "2026-11-10",
   "notes": [
-    "시작 화면 배경이 다섯 방을 차례로 보여 줘요.",
-    "창문과 창밖 풍경, 문을 실제처럼 새로 만들었어요.",
-    "가구끼리 겹쳐 보이던 곳을 고쳤어요.",
+    "멈춤 화면을 작업 일지로 새로 꾸몄어요.",
+    "멈춤 메뉴와 의뢰 목록이 더 잘 눌려요.",
+    "1.4.2: 시작 화면 배경이 다섯 방을 차례로 보여 주고, 창문과 문을 새로 만들었어요.",
     "1.4.0: 방과 물건, 손과 도구를 실제처럼 새로 만들었어요."
   ],
-  "windows": "https://github.com/EunYool10/LastRoom/releases/download/v1.4.2/LastRoom-Setup-1.4.2.exe",
-  "android": "https://github.com/EunYool10/LastRoom/releases/download/v1.4.2/LastRoom-1.4.2-android.apk",
-  "mac": "https://github.com/EunYool10/LastRoom/releases/download/v1.4.2/LastRoom-1.4.2-mac.zip",
+  "windows": "https://github.com/EunYool10/LastRoom/releases/download/v1.4.3/LastRoom-Setup-1.4.3.exe",
+  "android": "https://github.com/EunYool10/LastRoom/releases/download/v1.4.3/LastRoom-1.4.3-android.apk",
+  "mac": "https://github.com/EunYool10/LastRoom/releases/download/v1.4.3/LastRoom-1.4.3-mac.zip",
   "sha256": {
-    "windows": "995f2450d5d86d47798cb9598496b6f92a8eb8be46c6bf5f72ad612aa2c78e0e",
-    "android": "032917161b4b33910bbddeb4095bc28eb6bc0ef105e5caec340be478deca07b3",
-    "mac": "bf99ce82ef327e970e4fe25c996a6976f592c29a2fb695c0fb92b3c294934cc3"
+    "windows": "bef34551a503987e28b87ddb2a5c603ea2486f402a13557faa40cf3d08e042ae",
+    "android": "3cf3d9689ed10e651e04ac515df94687c72f80061e389a76166ffd2c7a0e4ec9",
+    "mac": "287d640bca10bbf691bb61048ca0faa39c3b8969e5c0659fe92bebf7bd2d91e5"
   },
   "page": "https://eunyool10.github.io/LastRoom/",
   "terms": "2026-11-03"
