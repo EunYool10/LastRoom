@@ -385,6 +385,16 @@ func pause_test(o: String, ei: int) -> void:
 		rows[3].mouse_entered.emit()
 	await _wait(0.2)
 	await _shot("pause")
+	Game.quit_to_title()
+	await _wait(0.5)
+	var cr := Game.modal_root.find_children("*", "Button", true, false)
+	if cr.size() > 0:
+		cr[0].mouse_entered.emit()
+	await _wait(0.2)
+	await _shot("quit_confirm")
+	Game.close_modal()
+	await _wait(0.3)
+	print("PAUSE after stay pause_visible=", Game.pause_root.visible, " stage=", Game.stage)
 	Game.hide_pause()
 	await _wait(0.6)
 	await _shot("after_resume")
@@ -1375,10 +1385,10 @@ func title_test(o: String) -> void:
 		if bt.text == "지우기":
 			bt.pressed.emit()
 			break
-	await _wait(0.3)
+	await _wait(0.45)
 	await _shot("reset_confirm")
 	for bt in Game.modal_root.find_children("*", "Button", true, false):
-		if bt.text == "지우기":
+		if bt.get_meta("label", "") == "기록을 지운다":
 			bt.pressed.emit()
 			break
 	await _wait(0.4)

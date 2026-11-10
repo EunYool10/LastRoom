@@ -5,7 +5,7 @@ const RoomScript := preload("res://scripts/room.gd")
 const InspectScript := preload("res://scripts/inspect.gd")
 const BoardScript := preload("res://scripts/board.gd")
 const SAVE_PATH := "user://save.json"
-const VERSION := "1.4.3"
+const VERSION := "1.4.4"
 const CONTACT := "eunyool100208@gmail.com"
 
 var EPISODES: Array = []
@@ -857,7 +857,7 @@ func _folder_tab_style() -> StyleBoxFlat:
 
 
 func _reset_save() -> void:
-	confirm("기록을 지울까?", "끝낸 장과 등급이 모두 사라진다. 지우기 전에 설정 → 기록에서 백업 코드를 만들어 두면 나중에 되살릴 수 있다.", "지우기", func():
+	confirm("기록을 모두 지울까?", "끝낸 장과 등급이 모두 사라진다. 지우기 전에 설정 → 기록에서 백업 코드를 만들어 두면 나중에 되살릴 수 있다.", ["지우지 않는다", "지금 기록을 그대로 둔다"], ["기록을 지운다", "끝낸 장과 등급이 사라지고 처음 상태가 된다"], true, func():
 		# 끝낸 장 · 등급만 지우고 설정 · 이용 안내 동의 · 본 업데이트 노트는 남긴다
 		var keep := {"done": {}}
 		for k in ["terms_ok", "seen_notes"]:
@@ -959,12 +959,13 @@ func _room_overlays(show: bool) -> void:
 	toast_box.visible = show
 
 
-## 멈춤 메뉴 한 줄: 작업 일지의 줄처럼 줄 전체가 눌리고, 버튼을 누르는 순간 바로 동작한다
-func _pause_row(i: int, title: String, desc: String, cb: Callable, last: bool) -> Button:
+## 메뉴 한 줄: 작업 일지의 줄처럼 줄 전체가 눌린다. press면 누르는 순간, 아니면 뗄 때 동작한다 (확인 창)
+func _pause_row(i: int, title: String, desc: String, cb: Callable, last: bool, press := true, ink := Ui.INK) -> Button:
 	var b := Button.new()
 	b.flat = true
 	b.focus_mode = Control.FOCUS_NONE
-	b.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
+	b.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS if press else BaseButton.ACTION_MODE_BUTTON_RELEASE
+	b.set_meta("label", title)
 	b.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	b.custom_minimum_size = Vector2(0, 68)
 	var mk := Ui.Marker.new()
@@ -993,8 +994,9 @@ func _pause_row(i: int, title: String, desc: String, cb: Callable, last: bool) -
 	var tv := Ui.vbox(2)
 	tv.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	tv.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	tv.add_child(Ui.label(title, 22, Ui.INK, Ui.serif_b))
-	tv.add_child(Ui.label(desc, 13, Ui.INK_DIM, Ui.sans))
+	tv.add_child(Ui.label(title, 22, ink, Ui.serif_b))
+	if desc != "":
+		tv.add_child(Ui.label(desc, 13, Ui.INK_DIM, Ui.sans))
 	h.add_child(Ui.expand(tv))
 	b.add_child(h)
 	b.mouse_entered.connect(func(): mk.set_level(2))
@@ -1069,7 +1071,7 @@ func show_pause(first := false) -> void:
 	if not first:
 		items.append(["보관함", "넣은 물건과 버린 물건을 살펴본다", open_inventory])
 		items.append(["설정", "화면 · 소리 · 조작을 바꾼다", open_settings])
-	items.append(["장 선택으로", "이번 작업을 그만두고 의뢰 목록으로 돌아간다", quit_to_title])
+	items.append(["의뢰 목록으로 나가기", "이번 작업을 그만두고 처음 화면으로 나간다", quit_to_title])
 	for i in items.size():
 		left.add_child(_pause_row(i, items[i][0], items[i][1], items[i][2], i == items.size() - 1))
 	cols.add_child(left)
@@ -1188,13 +1190,13 @@ func go_board() -> void:
 			board.setup(ep, S))
 	var m: int = world.missing()
 	if m > 0:
-		confirm("아직 찾지 못한 단서가 %d개 있다." % m, "이대로 사건을 재구성할까?", "재구성한다", go, "더 조사한다")
+		confirm("아직 찾지 못한 단서가 %d개 있다." % m, "이대로 사건을 재구성할까?", ["더 조사한다", "작업실에서 유품을 더 살펴본다"], ["재구성한다", "지금까지 찾은 단서로 사건을 맞춰 본다"], false, go)
 	else:
 		go.call()
 
 
 func quit_to_title() -> void:
-	confirm("장 선택으로 돌아갈까?", "이번 작업은 처음부터 다시 해야 한다.", "돌아간다", func():
+	confirm("의뢰 목록으로 나갈까?", "지금 나가면 이번 작업은 남지 않는다. 이 의뢰는 다음에 처음부터 다시 해야 한다.", ["현장에 남는다", "나가지 않고 하던 작업을 그대로 이어 간다"], ["의뢰 목록으로 나간다", "이번 작업을 그만두고 처음 화면으로 나간다"], true, func():
 		pause_root.visible = false
 		fade(func():
 			_clear_texts()
@@ -1835,16 +1837,30 @@ func _buttons_row(items: Array, on_paper := true) -> HBoxContainer:
 	return row
 
 
-func confirm(title: String, text: String, yes: String, cb: Callable, no := "그만둔다") -> void:
+## 확인 창: 고를 수 있는 두 가지를 줄마다 적고, 고르면 어떻게 되는지 한 줄씩 붙인다.
+## stay = [이름, 설명] 지금 하던 일을 그대로 두는 쪽 (Esc와 같다), go = [이름, 설명] 실제로 하는 쪽.
+## danger면 하는 쪽을 빨간 글씨로. 창이 뜨자마자 한 번 더 누른 것(두 번 누르기)은 받지 않는다
+func confirm(title: String, text: String, stay: Array, go: Array, danger: bool, cb: Callable) -> void:
 	var p := Ui.panel(Ui.paper_box(false, 38))
-	p.custom_minimum_size = Vector2(480, 0)
-	var v := Ui.vbox(10)
-	v.add_child(Ui.label(title, 24, Ui.INK, Ui.serif_b, true))
-	v.add_child(Ui.label(text, 17, Ui.INK_DIM, Ui.serif, true))
-	v.add_child(Ui.gap(14))
-	v.add_child(_buttons_row([[no, func(): close_modal()], [yes, func():
-		close_modal(true)
-		cb.call()]]))
+	p.custom_minimum_size = Vector2(560, 0)
+	var v := Ui.vbox(8)
+	v.add_child(Ui.label(Ui.keep_words(title), 26, Ui.INK, Ui.serif_b, true))
+	v.add_child(Ui.label(Ui.keep_words(text), 17, Ui.INK_DIM, Ui.serif, true))
+	v.add_child(Ui.gap(4))
+	v.add_child(Ui.rule(0.6, 2))
+	var armed := Time.get_ticks_msec() + 350
+	var on_stay := func():
+		if Time.get_ticks_msec() >= armed:
+			close_modal()
+	var on_go := func():
+		if Time.get_ticks_msec() >= armed:
+			close_modal(true)
+			cb.call()
+	v.add_child(_pause_row(0, stay[0], stay[1], on_stay, false, false))
+	v.add_child(_pause_row(1, go[0], go[1], on_go, true, false, Ui.RED if danger else Ui.INK))
+	if not touch:
+		v.add_child(Ui.gap(2))
+		v.add_child(Ui.label("Esc   " + str(stay[0]), 14, Ui.INK_DIM, Ui.sans))
 	p.add_child(v)
 	open_modal(p)
 
@@ -2261,13 +2277,13 @@ func _backup_paste() -> void:
 	var msg := Ui.label("", 15, Ui.RED, Ui.sans, true)
 	msg.custom_minimum_size = Vector2(600, 0)
 	v.add_child(msg)
-	v.add_child(_buttons_row([["붙여 넣기", func(): le.text = DisplayServer.clipboard_get().strip_edges().left(20000)], ["그만둔다", func(): close_modal()], ["되살리기", func():
+	v.add_child(_buttons_row([["붙여 넣기", func(): le.text = DisplayServer.clipboard_get().strip_edges().left(20000)], ["닫기", func(): close_modal()], ["되살리기", func():
 		var d := _backup_read(le.text)
 		if d.is_empty():
 			msg.text = "코드가 맞지 않는다. 빠진 글자 없이 전부 붙여 넣었는지 확인해 주세요."
 			Sfx.play("error", 0.5)
 			return
-		confirm("기록을 바꿀까?", "지금 기록이 코드의 기록(끝낸 장 %d개)으로 바뀐다." % d.done.size(), "바꾼다", func(): _backup_apply(d)), 21]]))
+		confirm("기록을 바꿀까?", "지금 기록이 코드의 기록(끝낸 장 %d개)으로 바뀐다." % d.done.size(), ["바꾸지 않는다", "지금 기록을 그대로 둔다"], ["코드의 기록으로 바꾼다", "지금 기록은 사라지고 코드의 기록이 남는다"], true, func(): _backup_apply(d)), 21]]))
 	open_modal(pv[0], func(): open_settings())
 	if not touch:
 		le.grab_focus.call_deferred()

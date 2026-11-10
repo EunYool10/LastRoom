@@ -10,7 +10,7 @@ Unicode true
   !define APPID "LastRoom"
 !endif
 !ifndef VERSION
-  !define VERSION "1.4.3"
+  !define VERSION "1.4.4"
 !endif
 !define PUBLISHER "김은율"
 !define UNKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APPID}"

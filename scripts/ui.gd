@@ -199,6 +199,21 @@ static func hbox(sep := 8) -> HBoxContainer:
 	return h
 
 
+## 한국어 문장이 낱말 가운데("백 / 업")에서 줄이 바뀌지 않게, 붙어 있는 한글 글자 사이를 묶는다 (U+2060).
+## 줄은 띄어쓰기 자리에서만 바뀐다
+static func keep_words(s: String) -> String:
+	var out := ""
+	var n := s.length()
+	for i in n:
+		out += s[i]
+		if i + 1 < n:
+			var a := s.unicode_at(i)
+			var b := s.unicode_at(i + 1)
+			if a >= 0xAC00 and a <= 0xD7A3 and b >= 0xAC00 and b <= 0xD7A3:
+				out += char(0x2060)
+	return out
+
+
 static func gap(h := 10) -> Control:
 	var c := Control.new()
 	c.custom_minimum_size = Vector2(0, h)
