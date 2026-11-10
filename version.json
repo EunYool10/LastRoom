@@ -1,0 +1,20 @@
+{
+  "version": "1.4.4",
+  "date": "2026-11-10",
+  "notes": [
+    "나갈지 남을지 묻는 확인 창을 알아보기 쉽게 바꿨어요.",
+    "1.4.3: 멈춤 화면을 작업 일지로 새로 꾸몄어요.",
+    "1.4.2: 시작 화면 배경이 다섯 방을 차례로 보여 주고, 창문과 문을 새로 만들었어요.",
+    "1.4.0: 방과 물건, 손과 도구를 실제처럼 새로 만들었어요."
+  ],
+  "windows": "https://github.com/EunYool10/LastRoom/releases/download/v1.4.4/LastRoom-Setup-1.4.4.exe",
+  "android": "https://github.com/EunYool10/LastRoom/releases/download/v1.4.4/LastRoom-1.4.4-android.apk",
+  "mac": "https://github.com/EunYool10/LastRoom/releases/download/v1.4.4/LastRoom-1.4.4-mac.zip",
+  "sha256": {
+    "windows": "de1f8e0bdb9ef7a3e9d879a0ddd7ad1d612330fc32350d5a89631950ece87e1f",
+    "android": "a1c09a8848c480fa12126646900e44db27574284ca699c6df7d219bc6d217573",
+    "mac": "572acebba41bd425a7060effe9301809d500ef40a2068cef47d846d217e4b200"
+  },
+  "page": "https://eunyool10.github.io/LastRoom/",
+  "terms": "2026-11-03"
+}
